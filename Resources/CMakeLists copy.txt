@@ -9,7 +9,7 @@ add_subdirectory(Imgui)
 target_link_libraries(HomeMonitor PRIVATE imguiLibrary)
 
 # Add additional resources
-add_library(resourcesLibrary OBJECT)
+add_library(resourcesLibrary)
 add_subdirectory(Resources)
 target_link_libraries(HomeMonitor PRIVATE resourcesLibrary)
 

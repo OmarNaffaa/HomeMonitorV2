@@ -2,12 +2,16 @@
 //
 // [2024/12/23]
 
-#include "Imgui/imgui.h"
-#include "Imgui/imgui_impl_win32.h"
-#include "Imgui/imgui_impl_dx12.h"
+#include "Imgui\\imgui.h"
+#include "Imgui\\imgui_impl_win32.h"
+#include "Imgui\\imgui_impl_dx12.h"
 #include <d3d12.h>
 #include <dxgi1_4.h>
 #include <tchar.h>
+
+#include "Resources\\resource.h"
+
+#include <iostream>
 
 // Config for example app
 static const int APP_NUM_FRAMES_IN_FLIGHT = 3;
@@ -21,7 +25,7 @@ struct FrameContext
 };
 
 // Simple free list based allocator
-struct ExampleDescriptorHeapAllocator
+struct DirectX12HeapAllocator
 {
     ID3D12DescriptorHeap*       Heap = nullptr;
     D3D12_DESCRIPTOR_HEAP_TYPE  HeapType = D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES;
@@ -30,7 +34,8 @@ struct ExampleDescriptorHeapAllocator
     UINT                        HeapHandleIncrement;
     ImVector<int>               FreeIndices;
 
-    void Create(ID3D12Device* device, ID3D12DescriptorHeap* heap)
+    void Create(ID3D12Device* device,
+                ID3D12DescriptorHeap* heap)
     {
         IM_ASSERT(Heap == nullptr && FreeIndices.empty());
         Heap = heap;
@@ -41,14 +46,17 @@ struct ExampleDescriptorHeapAllocator
         HeapHandleIncrement = device->GetDescriptorHandleIncrementSize(HeapType);
         FreeIndices.reserve((int)desc.NumDescriptors);
         for (int n = desc.NumDescriptors; n > 0; n--)
+        {
             FreeIndices.push_back(n);
+        }
     }
     void Destroy()
     {
         Heap = nullptr;
         FreeIndices.clear();
     }
-    void Alloc(D3D12_CPU_DESCRIPTOR_HANDLE* out_cpu_desc_handle, D3D12_GPU_DESCRIPTOR_HANDLE* out_gpu_desc_handle)
+    void Alloc(D3D12_CPU_DESCRIPTOR_HANDLE* out_cpu_desc_handle,
+               D3D12_GPU_DESCRIPTOR_HANDLE* out_gpu_desc_handle)
     {
         IM_ASSERT(FreeIndices.Size > 0);
         int idx = FreeIndices.back();
@@ -56,7 +64,8 @@ struct ExampleDescriptorHeapAllocator
         out_cpu_desc_handle->ptr = HeapStartCpu.ptr + (idx * HeapHandleIncrement);
         out_gpu_desc_handle->ptr = HeapStartGpu.ptr + (idx * HeapHandleIncrement);
     }
-    void Free(D3D12_CPU_DESCRIPTOR_HANDLE out_cpu_desc_handle, D3D12_GPU_DESCRIPTOR_HANDLE out_gpu_desc_handle)
+    void Free(D3D12_CPU_DESCRIPTOR_HANDLE out_cpu_desc_handle,
+              D3D12_GPU_DESCRIPTOR_HANDLE out_gpu_desc_handle)
     {
         int cpu_idx = (int)((out_cpu_desc_handle.ptr - HeapStartCpu.ptr) / HeapHandleIncrement);
         int gpu_idx = (int)((out_gpu_desc_handle.ptr - HeapStartGpu.ptr) / HeapHandleIncrement);
@@ -72,7 +81,7 @@ static UINT                           g_frameIndex = 0;
 static ID3D12Device*                  g_pd3dDevice = nullptr;
 static ID3D12DescriptorHeap*          g_pd3dRtvDescHeap = nullptr;
 static ID3D12DescriptorHeap*          g_pd3dSrvDescHeap = nullptr;
-static ExampleDescriptorHeapAllocator g_pd3dSrvDescHeapAlloc;
+static DirectX12HeapAllocator         g_pd3dSrvDescHeapAlloc;
 static ID3D12CommandQueue*            g_pd3dCommandQueue = nullptr;
 static ID3D12GraphicsCommandList*     g_pd3dCommandList = nullptr;
 static ID3D12Fence*                   g_fence = nullptr;
@@ -99,18 +108,27 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 int main(int argc, char** argv)
 {
     // Define application window
+    HICON hIcon = static_cast<HICON>(::LoadImage(
+        GetModuleHandle(nullptr),
+        MAKEINTRESOURCE(IDI_ICON),
+        IMAGE_ICON,
+        0, 0,
+        LR_DEFAULTCOLOR
+    ));
+    std::cout << IDI_ICON << " " << GetLastError() << std::endl;
+
     WNDCLASSEXW windowClass = {
         sizeof(WNDCLASSEXW),        // Size of struct
         CS_CLASSDC,                 // Allocate one shared device context
         WndProc,                    // Pointer to window procedure
         0L, 0L,                     // Do not allocate any extra bytes
         GetModuleHandle(nullptr),   // No handle neded
-        nullptr,                    // Use default window icon
+        hIcon,                      // Use custom icon
         nullptr,                    // Manually set cursor shape
         nullptr,                    // Manually paint background
         nullptr,                    // No default menu
         L"HomeMonitor",             // Window name
-        nullptr                     // Use default small icon
+        hIcon                       // Use custom small icon
     };
     ::RegisterClassExW(&windowClass);
 

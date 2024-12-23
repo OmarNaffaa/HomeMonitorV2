@@ -1,0 +1,2 @@
+#include "resource.h"
+IDI_ICON  ICON  "D:\\06_PersonalProjects\\HomeMonitorV2\\Resources\\home.ico"

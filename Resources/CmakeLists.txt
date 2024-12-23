@@ -1,0 +1,7 @@
+target_sources(resourcesLibrary
+    PRIVATE
+        resource.rc
+        resource.h
+)
+
+target_include_directories(resourcesLibrary PUBLIC ${CMAKE_SOURCE_DIR}/include)
