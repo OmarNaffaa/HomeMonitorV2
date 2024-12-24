@@ -6,6 +6,8 @@ target_sources(imguiLibrary
         imgui_impl_dx12.cpp
         imgui_tables.cpp
         imgui_widgets.cpp
+        implot.cpp
+        implot_items.cpp
 )
 
 # Add and link against DX12 libraries

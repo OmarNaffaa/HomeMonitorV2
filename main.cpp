@@ -2,16 +2,20 @@
 //
 // [2024/12/23]
 
-#include "Imgui\\imgui.h"
-#include "Imgui\\imgui_impl_win32.h"
-#include "Imgui\\imgui_impl_dx12.h"
+#include "Imgui/imgui.h"
+#include "Imgui/imgui_impl_win32.h"
+#include "Imgui/imgui_impl_dx12.h"
+#include "Imgui/implot.h"
+
 #include <d3d12.h>
 #include <dxgi1_4.h>
 #include <tchar.h>
+#include <string>
 
 #include "Resources\\resource.h"
 
-#include <iostream>
+#define HOMEMONITOR_DARK_MODE   true
+#define HOMEMONITOR_USE_VSYNC   true
 
 // Config for example app
 static const int APP_NUM_FRAMES_IN_FLIGHT = 3;
@@ -107,6 +111,8 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 
 int main(int argc, char** argv)
 {
+    ImGui_ImplWin32_EnableDpiAwareness();
+
     // Define application window
     HICON hIcon = static_cast<HICON>(::LoadImage(
         GetModuleHandle(nullptr),
@@ -115,7 +121,6 @@ int main(int argc, char** argv)
         0, 0,
         LR_DEFAULTCOLOR
     ));
-    std::cout << IDI_ICON << " " << GetLastError() << std::endl;
 
     WNDCLASSEXW windowClass = {
         sizeof(WNDCLASSEXW),        // Size of struct
@@ -136,7 +141,8 @@ int main(int argc, char** argv)
     HWND hwnd = ::CreateWindowW(windowClass.lpszClassName,
                                 L"HomeMonitor",
                                 WS_OVERLAPPEDWINDOW,
-                                100, 100, 1280, 800,
+                                100, 100,
+                                CW_USEDEFAULT, CW_USEDEFAULT,
                                 nullptr,
                                 nullptr,
                                 windowClass.hInstance,
@@ -161,10 +167,31 @@ int main(int argc, char** argv)
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;       // Enable Multi-Viewport / Platform Windows
+    //io.ConfigViewportsNoAutoMerge = true;
+    //io.ConfigViewportsNoTaskBarIcon = true;
+
+    ImPlot::CreateContext();
 
     // Setup Dear ImGui style
+    #if (HOMEMONITOR_DARK_MODE)
     ImGui::StyleColorsDark();
-    //ImGui::StyleColorsLight();
+    ImVec4 clearColor = ImVec4(0.2f, 0.2f, 0.2f, 1.00f);
+    auto invisibleColor = IM_COL32(255, 0, 0, 255);
+    #else
+    ImGui::StyleColorsLight();
+    ImVec4 clearColor = ImVec4(0.8f, 0.8f, 0.8f, 1.00f);
+    #endif
+
+    // When viewports are enabled we tweak WindowRounding/WindowBg
+    // so platform windows can look identical to regular ones.
+    ImGuiStyle& style = ImGui::GetStyle();
+    if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+    {
+        style.WindowRounding = 0.0f;
+        style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+    }
 
     // Setup Platform/Renderer backends
     ImGui_ImplWin32_Init(hwnd);
@@ -191,10 +218,10 @@ int main(int argc, char** argv)
     ImGui_ImplDX12_Init(&init_info);
 
     // Load font
-    io.Fonts->AddFontFromFileTTF("D:\\06_PersonalProjects\\HomeMonitorV2\\Fonts\\RobotoCondensed-Regular.ttf", 20.0f);
+    char* font_file = "D:\\06_PersonalProjects\\HomeMonitorV2\\Fonts\\Roboto-Regular.ttf";
+    io.Fonts->AddFontFromFileTTF(font_file, 22.0f);
 
     // Start rendering loop
-    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
     bool done = false;
 
     while (!done)
@@ -230,11 +257,36 @@ int main(int argc, char** argv)
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
-        // Create window
-        ImGui::Begin("HomeMonitor V2");
+        // Create docking space
+        ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
+
+        // Create Homemonitor control window
+        ImGui::Begin("Controls");
         ImGui::Text("First test with Imgui library");
         ImGui::Text("Application average %.3f ms/frame (%.1f FPS)",
                      1000.0f / io.Framerate, io.Framerate);
+        ImGui::End();
+
+        // Create Homemonitor plotting window
+        ImGui::Begin("Lines");
+        static float xs1[1001], ys1[1001];
+        for (int i = 0; i < 1001; ++i) {
+            xs1[i] = i * 0.001f;
+            ys1[i] = 0.5f + 0.5f * sinf(50 * (xs1[i] + (float)ImGui::GetTime() / 10));
+        }
+        static double xs2[20], ys2[20];
+        for (int i = 0; i < 20; ++i) {
+            xs2[i] = i * 1/19.0f;
+            ys2[i] = xs2[i] * xs2[i];
+        }
+        ImVec2 maxWindowSize(-1, -1);
+        if (ImPlot::BeginPlot("Line Plots", maxWindowSize)) {
+            ImPlot::SetupAxes("x","y");
+            ImPlot::PlotLine("f(x)", xs1, ys1, 1001);
+            ImPlot::SetNextMarkerStyle(ImPlotMarker_Circle);
+            ImPlot::PlotLine("g(x)", xs2, ys2, 20,ImPlotLineFlags_Segments);
+            ImPlot::EndPlot();
+        }
         ImGui::End();
 
         // Rendering
@@ -255,14 +307,14 @@ int main(int argc, char** argv)
         g_pd3dCommandList->ResourceBarrier(1, &barrier);
 
         // Render Dear ImGui graphics
-        const float clear_color_with_alpha[4] = {
-            clear_color.x * clear_color.w,
-            clear_color.y * clear_color.w,
-            clear_color.z * clear_color.w,
-            clear_color.w
+        const float clearColor_with_alpha[4] = {
+            clearColor.x * clearColor.w,
+            clearColor.y * clearColor.w,
+            clearColor.z * clearColor.w,
+            clearColor.w
         };
         g_pd3dCommandList->ClearRenderTargetView(g_mainRenderTargetDescriptor[backBufferIdx],
-                                                 clear_color_with_alpha, 0, nullptr);
+                                                 clearColor_with_alpha, 0, nullptr);
         g_pd3dCommandList->OMSetRenderTargets(1, &g_mainRenderTargetDescriptor[backBufferIdx],
                                               FALSE, nullptr);
         g_pd3dCommandList->SetDescriptorHeaps(1, &g_pd3dSrvDescHeap);
@@ -275,9 +327,20 @@ int main(int argc, char** argv)
 
         g_pd3dCommandQueue->ExecuteCommandLists(1, (ID3D12CommandList* const*)&g_pd3dCommandList);
 
+        // Update and Render additional Platform Windows
+        if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+        {
+            ImGui::UpdatePlatformWindows();
+            ImGui::RenderPlatformWindowsDefault();
+        }
+
         // Present
-        HRESULT hr = g_pSwapChain->Present(1, 0);   // Present with vsync
-        //HRESULT hr = g_pSwapChain->Present(0, 0); // Present without vsync
+        HRESULT hr;
+        #if (HOMEMONITOR_USE_VSYNC)
+        hr = g_pSwapChain->Present(1, 0);
+        #else
+        hr = g_pSwapChain->Present(0, 0);
+        #endif
         g_SwapChainOccluded = (hr == DXGI_STATUS_OCCLUDED);
 
         UINT64 fenceValue = g_fenceLastSignaledValue + 1;
@@ -291,6 +354,7 @@ int main(int argc, char** argv)
     // Cleanup
     ImGui_ImplDX12_Shutdown();
     ImGui_ImplWin32_Shutdown();
+    ImPlot::DestroyContext();
     ImGui::DestroyContext();
 
     CleanupDeviceD3D();
@@ -383,8 +447,11 @@ bool CreateDeviceD3D(HWND hWnd)
 
     // Create device
     D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
-    if (D3D12CreateDevice(nullptr, featureLevel, IID_PPV_ARGS(&g_pd3dDevice)) != S_OK)
+    if (D3D12CreateDevice(nullptr, featureLevel,
+                          IID_PPV_ARGS(&g_pd3dDevice)) != S_OK)
+    {
         return false;
+    }
 
     {
         D3D12_DESCRIPTOR_HEAP_DESC desc = {};
@@ -392,11 +459,17 @@ bool CreateDeviceD3D(HWND hWnd)
         desc.NumDescriptors = APP_NUM_BACK_BUFFERS;
         desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
         desc.NodeMask = 1;
-        if (g_pd3dDevice->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&g_pd3dRtvDescHeap)) != S_OK)
+        if (g_pd3dDevice->CreateDescriptorHeap(&desc,
+                                               IID_PPV_ARGS(&g_pd3dRtvDescHeap)) != S_OK)
+        {
             return false;
+        }
 
-        SIZE_T rtvDescriptorSize = g_pd3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-        D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = g_pd3dRtvDescHeap->GetCPUDescriptorHandleForHeapStart();
+        SIZE_T rtvDescriptorSize =
+            g_pd3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+        D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle =
+            g_pd3dRtvDescHeap->GetCPUDescriptorHandleForHeapStart();
+
         for (UINT i = 0; i < APP_NUM_BACK_BUFFERS; i++)
         {
             g_mainRenderTargetDescriptor[i] = rtvHandle;
@@ -409,8 +482,11 @@ bool CreateDeviceD3D(HWND hWnd)
         desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         desc.NumDescriptors = APP_SRV_HEAP_SIZE;
         desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-        if (g_pd3dDevice->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&g_pd3dSrvDescHeap)) != S_OK)
+        if (g_pd3dDevice->CreateDescriptorHeap(&desc,
+                                               IID_PPV_ARGS(&g_pd3dSrvDescHeap)) != S_OK)
+        {
             return false;
+        }
         g_pd3dSrvDescHeapAlloc.Create(g_pd3dDevice, g_pd3dSrvDescHeap);
     }
 
@@ -419,17 +495,29 @@ bool CreateDeviceD3D(HWND hWnd)
         desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
         desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
         desc.NodeMask = 1;
-        if (g_pd3dDevice->CreateCommandQueue(&desc, IID_PPV_ARGS(&g_pd3dCommandQueue)) != S_OK)
+        if (g_pd3dDevice->CreateCommandQueue(&desc,
+                                             IID_PPV_ARGS(&g_pd3dCommandQueue)) != S_OK)
+        {
             return false;
+        }
     }
 
     for (UINT i = 0; i < APP_NUM_FRAMES_IN_FLIGHT; i++)
-        if (g_pd3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&g_frameContext[i].CommandAllocator)) != S_OK)
+    {
+        if (g_pd3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                                 IID_PPV_ARGS(&g_frameContext[i].CommandAllocator)) != S_OK)
+        {
             return false;
+        }
+    }
 
-    if (g_pd3dDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, g_frameContext[0].CommandAllocator, nullptr, IID_PPV_ARGS(&g_pd3dCommandList)) != S_OK ||
-        g_pd3dCommandList->Close() != S_OK)
+    bool createCommandList = g_pd3dDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT,
+                                                             g_frameContext[0].CommandAllocator,
+                                                             nullptr, IID_PPV_ARGS(&g_pd3dCommandList));
+    if ((createCommandList != S_OK) || (g_pd3dCommandList->Close() != S_OK))
+    {
         return false;
+    }
 
     if (g_pd3dDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&g_fence)) != S_OK)
         return false;
@@ -442,11 +530,19 @@ bool CreateDeviceD3D(HWND hWnd)
         IDXGIFactory4* dxgiFactory = nullptr;
         IDXGISwapChain1* swapChain1 = nullptr;
         if (CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory)) != S_OK)
+        {
             return false;
-        if (dxgiFactory->CreateSwapChainForHwnd(g_pd3dCommandQueue, hWnd, &sd, nullptr, nullptr, &swapChain1) != S_OK)
+        }
+        if (dxgiFactory->CreateSwapChainForHwnd(g_pd3dCommandQueue,
+                                                hWnd, &sd, nullptr,
+                                                nullptr, &swapChain1) != S_OK)
+        {
             return false;
+        }
         if (swapChain1->QueryInterface(IID_PPV_ARGS(&g_pSwapChain)) != S_OK)
+        {
             return false;
+        }
         swapChain1->Release();
         dxgiFactory->Release();
         g_pSwapChain->SetMaximumFrameLatency(APP_NUM_BACK_BUFFERS);
@@ -460,17 +556,62 @@ bool CreateDeviceD3D(HWND hWnd)
 void CleanupDeviceD3D()
 {
     CleanupRenderTarget();
-    if (g_pSwapChain) { g_pSwapChain->SetFullscreenState(false, nullptr); g_pSwapChain->Release(); g_pSwapChain = nullptr; }
-    if (g_hSwapChainWaitableObject != nullptr) { CloseHandle(g_hSwapChainWaitableObject); }
+    if (g_pSwapChain)
+    {
+        g_pSwapChain->SetFullscreenState(false, nullptr);
+        g_pSwapChain->Release();
+        g_pSwapChain = nullptr;
+    }
+
+    if (g_hSwapChainWaitableObject != nullptr)
+    {
+        CloseHandle(g_hSwapChainWaitableObject);
+    }
+
     for (UINT i = 0; i < APP_NUM_FRAMES_IN_FLIGHT; i++)
-        if (g_frameContext[i].CommandAllocator) { g_frameContext[i].CommandAllocator->Release(); g_frameContext[i].CommandAllocator = nullptr; }
-    if (g_pd3dCommandQueue) { g_pd3dCommandQueue->Release(); g_pd3dCommandQueue = nullptr; }
-    if (g_pd3dCommandList) { g_pd3dCommandList->Release(); g_pd3dCommandList = nullptr; }
-    if (g_pd3dRtvDescHeap) { g_pd3dRtvDescHeap->Release(); g_pd3dRtvDescHeap = nullptr; }
-    if (g_pd3dSrvDescHeap) { g_pd3dSrvDescHeap->Release(); g_pd3dSrvDescHeap = nullptr; }
-    if (g_fence) { g_fence->Release(); g_fence = nullptr; }
-    if (g_fenceEvent) { CloseHandle(g_fenceEvent); g_fenceEvent = nullptr; }
-    if (g_pd3dDevice) { g_pd3dDevice->Release(); g_pd3dDevice = nullptr; }
+    {
+        if (g_frameContext[i].CommandAllocator)
+        {
+            g_frameContext[i].CommandAllocator->Release();
+            g_frameContext[i].CommandAllocator = nullptr;
+        }
+    }    
+
+    if (g_pd3dCommandQueue)
+    {
+        g_pd3dCommandQueue->Release();
+        g_pd3dCommandQueue = nullptr;
+    }
+    if (g_pd3dCommandList)
+    {
+        g_pd3dCommandList->Release();
+        g_pd3dCommandList = nullptr;
+    }
+    if (g_pd3dRtvDescHeap)
+    {
+        g_pd3dRtvDescHeap->Release();
+        g_pd3dRtvDescHeap = nullptr;
+    }
+    if (g_pd3dSrvDescHeap)
+    {
+        g_pd3dSrvDescHeap->Release();
+        g_pd3dSrvDescHeap = nullptr;
+    }
+    if (g_fence)
+    {
+        g_fence->Release();
+        g_fence = nullptr;
+    }
+    if (g_fenceEvent)
+    {
+        CloseHandle(g_fenceEvent);
+        g_fenceEvent = nullptr;
+    }
+    if (g_pd3dDevice)
+    {
+        g_pd3dDevice->Release();
+        g_pd3dDevice = nullptr;
+    }
 }
 
 void CreateRenderTarget()
@@ -490,7 +631,10 @@ void CleanupRenderTarget()
 
     for (UINT i = 0; i < APP_NUM_BACK_BUFFERS; i++)
     {
-        if (g_mainRenderTargetResource[i]) { g_mainRenderTargetResource[i]->Release(); g_mainRenderTargetResource[i] = nullptr; }
+        if (g_mainRenderTargetResource[i]) {
+            g_mainRenderTargetResource[i]->Release();
+            g_mainRenderTargetResource[i] = nullptr;
+        }
     }
 }
 
@@ -499,7 +643,8 @@ void WaitForLastSubmittedFrame()
     FrameContext* frameCtx = &g_frameContext[g_frameIndex % APP_NUM_FRAMES_IN_FLIGHT];
 
     UINT64 fenceValue = frameCtx->FenceValue;
-    if (fenceValue == 0) {
+    if (fenceValue == 0)
+    {
         // No fence was signaled
         return;
     }
@@ -519,13 +664,17 @@ FrameContext* WaitForNextFrameResources()
     UINT nextFrameIndex = g_frameIndex + 1;
     g_frameIndex = nextFrameIndex;
 
-    HANDLE waitableObjects[] = { g_hSwapChainWaitableObject, nullptr };
+    HANDLE waitableObjects[] = {
+        g_hSwapChainWaitableObject,
+        nullptr
+    };
     DWORD numWaitableObjects = 1;
 
     FrameContext* frameCtx = &g_frameContext[nextFrameIndex % APP_NUM_FRAMES_IN_FLIGHT];
     UINT64 fenceValue = frameCtx->FenceValue;
-    if (fenceValue != 0) // means no fence was signaled
+    if (fenceValue != 0)
     {
+        // means no fence was signaled
         frameCtx->FenceValue = 0;
         g_fence->SetEventOnCompletion(fenceValue, g_fenceEvent);
         waitableObjects[1] = g_fenceEvent;
