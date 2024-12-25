@@ -1,18 +1,19 @@
 // HomeMonitor V2: Viewing Application using WIN32 + DX12
 //
 // [2024/12/23]
+#include <d3d12.h>
+#include <dxgi1_4.h>
+#include <tchar.h>
+#include <string>
 
 #include "Imgui/imgui.h"
 #include "Imgui/imgui_impl_win32.h"
 #include "Imgui/imgui_impl_dx12.h"
 #include "Imgui/implot.h"
 
-#include <d3d12.h>
-#include <dxgi1_4.h>
-#include <tchar.h>
-#include <string>
+#include "Resources/resource.h"
 
-#include "Resources\\resource.h"
+#include "ThingSpeak/ThingSpeak.h"
 
 #define HOMEMONITOR_DARK_MODE   true
 #define HOMEMONITOR_USE_VSYNC   true
@@ -223,6 +224,9 @@ int main(int argc, char** argv)
 
     // Start rendering loop
     bool done = false;
+
+    ThingSpeak ts("1277292", "I4BV5Q70NNDWH0SP");
+    ts.GetChannelData(48);
 
     while (!done)
     {
