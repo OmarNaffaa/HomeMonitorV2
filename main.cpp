@@ -219,7 +219,7 @@ int main(int argc, char** argv)
     ImGui_ImplDX12_Init(&init_info);
 
     // Load font
-    char* font_file = "D:\\06_PersonalProjects\\HomeMonitorV2\\Fonts\\Roboto-Regular.ttf";
+    char font_file[] = "D:\\06_PersonalProjects\\HomeMonitorV2\\Fonts\\Roboto-Regular.ttf";
     io.Fonts->AddFontFromFileTTF(font_file, 22.0f);
 
     // Start rendering loop

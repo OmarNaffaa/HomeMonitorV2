@@ -7,11 +7,11 @@ include(FetchContent)
 FetchContent_Declare(cpr GIT_REPOSITORY https://github.com/libcpr/cpr.git
                          GIT_TAG 1.11.0)
 FetchContent_MakeAvailable(cpr)
-target_link_libraries(thingspeakLibrary PRIVATE cpr::cpr)
+target_link_libraries(thingspeakLibrary PUBLIC cpr::cpr)
 
 FetchContent_Declare(nlohmann_json GIT_REPOSITORY https://github.com/nlohmann/json
                                    GIT_TAG v3.11.2)
 FetchContent_MakeAvailable(nlohmann_json)
-target_link_libraries(thingspeakLibrary PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(thingspeakLibrary PUBLIC nlohmann_json::nlohmann_json)
 
 target_include_directories(thingspeakLibrary PUBLIC ${CMAKE_SOURCE_DIR}/include)

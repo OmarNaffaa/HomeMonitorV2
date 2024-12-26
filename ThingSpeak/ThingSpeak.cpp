@@ -1,9 +1,9 @@
 #include <cpr/cpr.h>
-
 #include <nlohmann/json.hpp>
-using json = nlohmann::json;
 
 #include "ThingSpeak.h"
+
+#define DEBUG_THINGSPEAK true
 
 enum class HttpStatusCode {
     OK = 200,
@@ -23,133 +23,114 @@ enum class HttpStatusCode {
     ServiceUnavailable = 503
 };
 
-void ThingSpeak::GetChannelData(uint32_t numEntries)
+/**
+ * @brief Perform an HTTP GET call to ThingSpeak endpoint to obtain
+ *        data in JSON format
+ * 
+ * @param numEntries - The number of entries to obtain from ThingSpeak
+ * 
+ * @return json - JSON object containing response from ThingSpeak
+ *                NULL if data could not be obtained
+ */
+json ThingSpeak::GetChannelData(uint32_t numEntries)
 {
-    std::string thingspeakUrl = BuildThingspeakUrl(numEntries);
+    std::string thingSpeakUrl = BuildThingSpeakHttpGetUrl(numEntries);
 
-    cpr::Response result = cpr::Get(cpr::Url{thingspeakUrl});
+    cpr::Response result = cpr::Get(cpr::Url{thingSpeakUrl});
+
+    json thingSpeakData = NULL;
 
     if (result.status_code == static_cast<long>(HttpStatusCode::OK))
     {
-        std::cout << "\nGot successful response from " << thingspeakUrl << std::endl;
+        std::cout << "\nGot successful response from " << thingSpeakUrl << std::endl;
         
-        json thingspeakData = json::parse(result.text);
+        json thingSpeakData = json::parse(result.text);
 
-        auto feeds = thingspeakData["feeds"];
-        
-        for (auto& feed : feeds)
+        for (auto& feed : thingSpeakData["feeds"])
         {
-            std::cout << "Feed Data:\n\n" << feed << std::endl;
+            feed["created_at"] = ConvertUtcDateTimeToPstDateTime(feed["created_at"]);
+
+            #if (DEBUG_THINGSPEAK)
+            std::cout << "\nFeed Data:\n" << feed << std::endl;
+            #endif
         }
-
-        // Json::Value jsonData;
-        // Json::CharReaderBuilder jsonReader;
-        // string errs;
-
-        // if (Json::parseFromStream(jsonReader, httpData, &jsonData, &errs))
-        // {
-        //     const Json::Value jsonValues = jsonData["feeds"];
-
-        //     for (int i = 0; i < jsonValues.size(); i++)
-        //     {
-        //         // iterate and store thingspeak values to field vector
-        //         currResult.insert(pair<string, string>("created_at", jsonValues[i][jsonValues[i].getMemberNames()[0]].asString()));
-        //         currResult.insert(pair<string, string>("entry_id", jsonValues[i][jsonValues[i].getMemberNames()[1]].asString()));
-        //         currResult.insert(pair<string, string>("field1", jsonValues[i][jsonValues[i].getMemberNames()[2]].asString())); 
-        //         currResult.insert(pair<string, string>("field2", jsonValues[i][jsonValues[i].getMemberNames()[3]].asString()));
-
-        //         fieldResults.push_back(currResult);
-
-        //         currResult.clear();
-        //     }
-        // }
-        // else
-        // {
-        //     cout << "Could not parse HTTP data as JSON" << endl;
-        //     cout << "HTTP data was: " << httpData.str() << std::endl;
-        // }
     }
     else
     {
-        std::cout << "[ERROR] Couldn't GET from " << thingspeakUrl << ".\n"
+        std::cout << "[ERROR] Couldn't GET from " << thingSpeakUrl << ".\n"
                   << "        Return code: " << result.status_code << std::endl;
     }
+
+    return thingSpeakData;
 }
 
-void ThingSpeak::printData()
+/**
+ * @brief Create URL used to perform HTTP get request to ThingSpeak
+ * 
+ * @param numEntries - The number of entries to obtain from ThingSpeak
+ * 
+ * @return std::string - a string representing the URL to query
+ */
+std::string ThingSpeak::BuildThingSpeakHttpGetUrl(uint32_t numEntries)
 {
-    // for (auto& myMap : fieldResults)
-    // {
-    //     for (auto it = myMap.cbegin(); it != myMap.cend(); ++it)
-    //     {
-    //         cout << it->first << " " << it->second << "\n";
-    //     }
-
-    //     cout << endl;
-    // }
-}
-
-std::string ThingSpeak::GetMostRecentTemp(int fieldNum)
-{
-    std::string mostRecentPoint;
-
-    // if (fieldNum == 1)
-    // {
-    //     for (auto& mapItem : fieldResults)
-    //     {
-    //         for (auto it = mapItem.cbegin(); it != mapItem.cend(); ++it)
-    //         {
-    //             if (it->first == "field1" && it->second != "") mostRecentPoint = it->second;
-    //         }
-    //     }
-    // }
-    // else if (fieldNum == 2)
-    // {
-    //     for (auto& mapItem : fieldResults)
-    //     {
-    //         for (auto it = mapItem.cbegin(); it != mapItem.cend(); ++it)
-    //         {
-    //             if (it->first == "field2" && it->second != "") mostRecentPoint = it->second;
-    //         }
-    //     }
-    // }
-    // else
-    // {
-    //     mostRecentPoint = "Invalid Field";
-    // }
-
-    return mostRecentPoint;
-}
-
-std::string ThingSpeak::GetMostRecentTimestamp()
-{
-    std::string mostRecentTime;
-
-    // for (auto& mapItem : fieldResults)
-    // {
-    //     for (auto it = mapItem.cbegin(); it != mapItem.cend(); ++it)
-    //     {
-    //         if (it->first == "created_at") mostRecentTime = it->second;
-    //     }
-    // }
-
-    return mostRecentTime;
-}
-
-std::vector<thingspeakEntry> ThingSpeak::GetFieldResults()
-{
-    std::vector<thingspeakEntry> temp;
-    return temp;
-}
-
-std::string ThingSpeak::BuildThingspeakUrl(uint32_t numRequests)
-{
-    std::string url = "https://api.thingspeak.com/channels/";
-    url += thingspeakChannel;
+    std::string url = "https://api.thingSpeak.com/channels/";
+    url += thingSpeakChannel;
     url += "/feeds.json?api_key=";
-    url += thingspeakKey;
+    url += thingSpeakKey;
     url += "&results=";
-    url += std::to_string(numRequests);
+    url += std::to_string(numEntries);
 
     return url;
+}
+
+/**
+ * @brief Functionality to convert the date and time provided by
+ *        ThingSpeak to its corresponding date and time PST
+ * 
+ * @param utcDateTimeStr - UTC Date/Time string (e.g. "2024-12-24T07:10:39Z")
+ * 
+ * @return std::string - PST Date/Time string
+ */
+std::string ThingSpeak::ConvertUtcDateTimeToPstDateTime(std::string utcDateTimeStr)
+{
+    // Parse the UTC time string to std::chrono::system_clock::time_point
+    std::istringstream ss(utcDateTimeStr);
+    std::chrono::sys_time<std::chrono::seconds> utcTimePoint;
+    ss >> std::chrono::parse("%Y-%m-%dT%H:%M:%SZ", utcTimePoint);
+
+    // Define the PST offset and perform conversion
+    auto pstOffset = std::chrono::hours(GetPstTimeOffset());
+    auto pstTimePoint = utcTimePoint + pstOffset;
+
+    // Convert time_point back to std::tm
+    std::time_t pstTime = std::chrono::system_clock::to_time_t(pstTimePoint);
+    std::tm* pstTm = std::gmtime(&pstTime);
+
+    // Convert timestamp to string
+    std::ostringstream oss;
+    oss << std::put_time(pstTm, "%Y-%m-%d %H:%M:%S");
+    std::string pstDateTimeStr = oss.str();
+
+    return pstDateTimeStr;
+}
+
+/**
+ * @brief Compute PST time offset based on Daylight savings
+ * 
+ * @return int - Offset, in hours, to convert UTC time to PST
+ */
+int ThingSpeak::GetPstTimeOffset(void)
+{
+    int pstOffset = -8;
+
+    auto now = std::chrono::system_clock::now();
+    auto local_time = std::chrono::zoned_time{std::chrono::current_zone(), now};
+
+    bool daylightSavings = (local_time.get_info().save != std::chrono::seconds{0});
+    if (daylightSavings)
+    {
+        pstOffset += 1;
+    }
+
+    return pstOffset;
 }

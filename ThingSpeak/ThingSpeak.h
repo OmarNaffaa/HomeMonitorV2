@@ -1,27 +1,31 @@
 #include <iostream>
 #include <string>
+#include <sstream>
 #include <vector>
 #include <exception>
 #include <map>
+#include <chrono>
+#include <format>
+#include <cpr/cpr.h>
+#include <nlohmann/json.hpp>
 
-typedef std::map<std::string, std::string> thingspeakEntry;
+using json = nlohmann::json;
+
+typedef std::map<std::string, std::string> thingSpeakEntry;
 
 class ThingSpeak
 {
 public:
     ThingSpeak(std::string id, std::string key) :
-               thingspeakChannel(id), thingspeakKey(key) {}
+               thingSpeakChannel(id), thingSpeakKey(key) {}
 
-    // Functions
-    void printData();
-    void GetChannelData(uint32_t numEntries);
-    std::string GetMostRecentTemp(int fieldNum);
-    std::string GetMostRecentTimestamp();
-    std::vector<thingspeakEntry> GetFieldResults();
+    json GetChannelData(uint32_t numEntries);
 
 private:
-	std::string thingspeakKey;
-	std::string thingspeakChannel;
+	std::string thingSpeakKey;
+	std::string thingSpeakChannel;
 
-	std::string BuildThingspeakUrl(uint32_t numRequests);
+	std::string BuildThingSpeakHttpGetUrl(uint32_t numRequests);
+    std::string ConvertUtcDateTimeToPstDateTime(std::string utcDateTimeStr);
+    int GetPstTimeOffset(void);
 };
