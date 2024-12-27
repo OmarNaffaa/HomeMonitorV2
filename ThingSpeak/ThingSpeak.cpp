@@ -1,9 +1,13 @@
 #include <cpr/cpr.h>
 #include <nlohmann/json.hpp>
+#include <assert.h>
 
 #include "ThingSpeak.h"
 
-#define DEBUG_THINGSPEAK true
+#define DEBUG_THINGSPEAK false
+
+#define THINGSPEAK_LOWEST_FIELD_NUMBER    1
+#define THINGSPEAK_HIGHEST_FIELD_NUMBER   8
 
 enum class HttpStatusCode {
     OK = 200,
@@ -22,6 +26,68 @@ enum class HttpStatusCode {
     BadGateway = 502,
     ServiceUnavailable = 503
 };
+
+/**
+ * @brief Get ThingSpeak data for a specified field
+ * 
+ * @param fieldNum      - [Input] Field number to obtain data for
+ * @param fieldName     - [Output] Name of field defined in ThingSpeak
+ * @param numDataPoints - [Input] Number of data points to request
+ * @param xAxisData     - [Output] Data to plot on x-axis (entry_id)
+ * @param yAxisData     - [Output] Data to plot on y-axis (field#)
+ * 
+ * @return int - Size of data obtained.
+ *               Negative value if no data / field does not exist.
+ */
+int ThingSpeak::GetFieldData(uint8_t const fieldNum,
+                             std::string& fieldName,
+                             uint32_t const numDataPoints,
+                             std::vector<int>& xAxisData,
+                             std::vector<float>& yAxisData)
+{
+    if ((fieldNum < THINGSPEAK_LOWEST_FIELD_NUMBER)
+        || (fieldNum > THINGSPEAK_HIGHEST_FIELD_NUMBER))
+    {
+        std::cerr << "Field number " << fieldNum << " is not supported" << std::endl;
+        return -1;
+    }
+
+    json thingSpeakData = GetChannelData(numDataPoints);
+
+    std::string fieldId = "field" + std::to_string(fieldNum);
+    try
+    {
+        fieldName = thingSpeakData["channel"][fieldId];
+    }
+    catch(const std::out_of_range& e)
+    {
+        std::cerr << e.what() << '\n';
+        return -1;
+    }
+
+    for (auto& feed : thingSpeakData["feeds"])
+    {
+        // TODO: Get timestamps to display when hovering over data points
+        xAxisData.push_back(feed["entry_id"]);
+        try
+        {
+            std::string fieldValue = feed[fieldId];
+            yAxisData.push_back(std::stof(fieldValue));
+        }
+        catch(const std::exception& e)
+        {
+            std::cerr << "Error on entry_id = " << feed["entry_id"]
+                      << ". Value = " << feed[fieldId];
+            std::cerr << e.what() << '\n';
+
+            // Ensure only entries with valid data are kept
+            xAxisData.pop_back();
+        }
+    }
+
+    assert(xAxisData.size() == yAxisData.size());
+    return xAxisData.size();
+}
 
 /**
  * @brief Perform an HTTP GET call to ThingSpeak endpoint to obtain
@@ -44,7 +110,7 @@ json ThingSpeak::GetChannelData(uint32_t numEntries)
     {
         std::cout << "\nGot successful response from " << thingSpeakUrl << std::endl;
         
-        json thingSpeakData = json::parse(result.text);
+        thingSpeakData = json::parse(result.text);
 
         for (auto& feed : thingSpeakData["feeds"])
         {
@@ -57,7 +123,7 @@ json ThingSpeak::GetChannelData(uint32_t numEntries)
     }
     else
     {
-        std::cout << "[ERROR] Couldn't GET from " << thingSpeakUrl << ".\n"
+        std::cerr << "[ERROR] Couldn't GET from " << thingSpeakUrl << ".\n"
                   << "        Return code: " << result.status_code << std::endl;
     }
 
@@ -85,7 +151,7 @@ std::string ThingSpeak::BuildThingSpeakHttpGetUrl(uint32_t numEntries)
 
 /**
  * @brief Functionality to convert the date and time provided by
- *        ThingSpeak to its corresponding date and time PST
+ *        ThingSpeak (UTC) to its corresponding date and time PST
  * 
  * @param utcDateTimeStr - UTC Date/Time string (e.g. "2024-12-24T07:10:39Z")
  * 

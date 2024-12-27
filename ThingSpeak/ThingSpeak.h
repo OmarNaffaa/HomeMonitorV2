@@ -19,12 +19,17 @@ public:
     ThingSpeak(std::string id, std::string key) :
                thingSpeakChannel(id), thingSpeakKey(key) {}
 
-    json GetChannelData(uint32_t numEntries);
+    int GetFieldData(uint8_t const fieldNum,
+                     std::string& fieldName,
+                     uint32_t const numDataPoints,
+                     std::vector<int>& xAxisData,
+                     std::vector<float>& yAxisData);
 
 private:
 	std::string thingSpeakKey;
 	std::string thingSpeakChannel;
 
+    json GetChannelData(uint32_t numEntries);
 	std::string BuildThingSpeakHttpGetUrl(uint32_t numRequests);
     std::string ConvertUtcDateTimeToPstDateTime(std::string utcDateTimeStr);
     int GetPstTimeOffset(void);

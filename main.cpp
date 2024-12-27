@@ -1,6 +1,7 @@
 // HomeMonitor V2: Viewing Application using WIN32 + DX12
 //
 // [2024/12/23]
+
 #include <d3d12.h>
 #include <dxgi1_4.h>
 #include <tchar.h>
@@ -15,8 +16,17 @@
 
 #include "ThingSpeak/ThingSpeak.h"
 
+#define DEBUG_HOMEMONITOR       true
 #define HOMEMONITOR_DARK_MODE   true
 #define HOMEMONITOR_USE_VSYNC   true
+
+#define MAX_THINGSPEAK_REQUEST_SIZE  1000
+
+#if (DEBUG_HOMEMONITOR)
+#include <iostream>
+#else
+#pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:mainCRTStartup") // hide command line
+#endif
 
 // Config for example app
 static const int APP_NUM_FRAMES_IN_FLIGHT = 3;
@@ -107,7 +117,8 @@ void WaitForLastSubmittedFrame();
 FrameContext* WaitForNextFrameResources();
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg,
+                                                             WPARAM wParam, LPARAM lParam);
 
 
 int main(int argc, char** argv)
@@ -154,7 +165,8 @@ int main(int argc, char** argv)
     if (!CreateDeviceD3D(hwnd))
     {
         CleanupDeviceD3D();
-        ::UnregisterClassW(windowClass.lpszClassName, windowClass.hInstance);
+        ::UnregisterClassW(windowClass.lpszClassName,
+                           windowClass.hInstance);
         return 1;
     }
 
@@ -166,12 +178,10 @@ int main(int argc, char** argv)
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
-    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;       // Enable Multi-Viewport / Platform Windows
-    //io.ConfigViewportsNoAutoMerge = true;
-    //io.ConfigViewportsNoTaskBarIcon = true;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Enable Keyboard Controls
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;   // Enable Gamepad Controls
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;      // Enable Docking
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;    // Enable Multi-Viewport / Platform Windows
 
     ImPlot::CreateContext();
 
@@ -226,7 +236,12 @@ int main(int argc, char** argv)
     bool done = false;
 
     ThingSpeak ts("1277292", "I4BV5Q70NNDWH0SP");
-    ts.GetChannelData(48);
+
+    std::string fieldName;
+    std::vector<int> xAxisData;
+    std::vector<float> yAxisData;
+    int dataSize;
+    auto pollingDelay = std::chrono::steady_clock::now();
 
     while (!done)
     {
@@ -271,24 +286,35 @@ int main(int argc, char** argv)
                      1000.0f / io.Framerate, io.Framerate);
         ImGui::End();
 
+        // Refresh data periodically
+        if (std::chrono::steady_clock::now() > pollingDelay)
+        {
+            auto currentTime = std::chrono::system_clock::now();
+            std::time_t refreshTime = std::chrono::system_clock::to_time_t(currentTime);
+            std::cout << "Refreshing data at " << std::ctime(&refreshTime) << std::endl;
+
+            dataSize = ts.GetFieldData(1, fieldName, 100, xAxisData, yAxisData);
+
+            pollingDelay = std::chrono::steady_clock::now() + std::chrono::minutes(5);
+        }
+
         // Create Homemonitor plotting window
-        ImGui::Begin("Lines");
-        static float xs1[1001], ys1[1001];
-        for (int i = 0; i < 1001; ++i) {
-            xs1[i] = i * 0.001f;
-            ys1[i] = 0.5f + 0.5f * sinf(50 * (xs1[i] + (float)ImGui::GetTime() / 10));
+        ImGui::Begin("Viewer");
+
+        int xAxisDataArray[MAX_THINGSPEAK_REQUEST_SIZE];
+        int yAxisDataArray[MAX_THINGSPEAK_REQUEST_SIZE];
+
+        for (int i = 0; i < dataSize; i++)
+        {
+            xAxisDataArray[i] = xAxisData[i];
+            yAxisDataArray[i] = yAxisData[i];
         }
-        static double xs2[20], ys2[20];
-        for (int i = 0; i < 20; ++i) {
-            xs2[i] = i * 1/19.0f;
-            ys2[i] = xs2[i] * xs2[i];
-        }
+
         ImVec2 maxWindowSize(-1, -1);
-        if (ImPlot::BeginPlot("Line Plots", maxWindowSize)) {
-            ImPlot::SetupAxes("x","y");
-            ImPlot::PlotLine("f(x)", xs1, ys1, 1001);
+        if (ImPlot::BeginPlot("Weather Data", maxWindowSize)) {
+            ImPlot::SetupAxes("Entry ID", "Temperature / Humidity");
             ImPlot::SetNextMarkerStyle(ImPlotMarker_Circle);
-            ImPlot::PlotLine("g(x)", xs2, ys2, 20,ImPlotLineFlags_Segments);
+            ImPlot::PlotLine(fieldName.c_str(), xAxisDataArray, yAxisDataArray, dataSize);
             ImPlot::EndPlot();
         }
         ImGui::End();
@@ -311,14 +337,14 @@ int main(int argc, char** argv)
         g_pd3dCommandList->ResourceBarrier(1, &barrier);
 
         // Render Dear ImGui graphics
-        const float clearColor_with_alpha[4] = {
+        const float clearColorWithAlpha[4] = {
             clearColor.x * clearColor.w,
             clearColor.y * clearColor.w,
             clearColor.z * clearColor.w,
             clearColor.w
         };
         g_pd3dCommandList->ClearRenderTargetView(g_mainRenderTargetDescriptor[backBufferIdx],
-                                                 clearColor_with_alpha, 0, nullptr);
+                                                 clearColorWithAlpha, 0, nullptr);
         g_pd3dCommandList->OMSetRenderTargets(1, &g_mainRenderTargetDescriptor[backBufferIdx],
                                               FALSE, nullptr);
         g_pd3dCommandList->SetDescriptorHeaps(1, &g_pd3dSrvDescHeap);
