@@ -17,7 +17,7 @@
 #include "ThingSpeak/ThingSpeak.h"
 
 #define DEBUG_HOMEMONITOR       true
-#define HOMEMONITOR_DARK_MODE   true
+#define HOMEMONITOR_DARK_MODE   false
 #define HOMEMONITOR_USE_VSYNC   true
 
 #define MAX_THINGSPEAK_REQUEST_SIZE  1000
@@ -230,7 +230,7 @@ int main(int argc, char** argv)
 
     // Load font
     char font_file[] = "D:\\06_PersonalProjects\\HomeMonitorV2\\Fonts\\Roboto-Regular.ttf";
-    io.Fonts->AddFontFromFileTTF(font_file, 22.0f);
+    io.Fonts->AddFontFromFileTTF(font_file, 20.0f);
 
     // Start rendering loop
     bool done = false;
@@ -291,8 +291,10 @@ int main(int argc, char** argv)
         {
             auto currentTime = std::chrono::system_clock::now();
             std::time_t refreshTime = std::chrono::system_clock::to_time_t(currentTime);
-            std::cout << "Refreshing data at " << std::ctime(&refreshTime) << std::endl;
+            std::cout << "\nRefreshing data at " << std::ctime(&refreshTime) << std::endl;
 
+            xAxisData.clear();
+            yAxisData.clear();
             dataSize = ts.GetFieldData(1, fieldName, 100, xAxisData, yAxisData);
 
             pollingDelay = std::chrono::steady_clock::now() + std::chrono::minutes(5);
@@ -301,8 +303,8 @@ int main(int argc, char** argv)
         // Create Homemonitor plotting window
         ImGui::Begin("Viewer");
 
-        int xAxisDataArray[MAX_THINGSPEAK_REQUEST_SIZE];
-        int yAxisDataArray[MAX_THINGSPEAK_REQUEST_SIZE];
+        float xAxisDataArray[MAX_THINGSPEAK_REQUEST_SIZE];
+        float yAxisDataArray[MAX_THINGSPEAK_REQUEST_SIZE];
 
         for (int i = 0; i < dataSize; i++)
         {
@@ -311,12 +313,14 @@ int main(int argc, char** argv)
         }
 
         ImVec2 maxWindowSize(-1, -1);
+        ImPlot::PushStyleVar(ImPlotStyleVar_LineWeight, 3.0f);
         if (ImPlot::BeginPlot("Weather Data", maxWindowSize)) {
             ImPlot::SetupAxes("Entry ID", "Temperature / Humidity");
             ImPlot::SetNextMarkerStyle(ImPlotMarker_Circle);
             ImPlot::PlotLine(fieldName.c_str(), xAxisDataArray, yAxisDataArray, dataSize);
             ImPlot::EndPlot();
         }
+        ImPlot::PopStyleVar();
         ImGui::End();
 
         // Rendering
