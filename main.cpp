@@ -20,7 +20,8 @@
 #define HOMEMONITOR_DARK_MODE   false
 #define HOMEMONITOR_USE_VSYNC   true
 
-#define MAX_THINGSPEAK_REQUEST_SIZE  1000
+#define MAX_THINGSPEAK_REQUEST_SIZE      1000
+#define MAX_THINGSPEAK_USER_INPUT_SIZE   30
 
 #if (DEBUG_HOMEMONITOR)
 #include <iostream>
@@ -189,7 +190,6 @@ int main(int argc, char** argv)
     #if (HOMEMONITOR_DARK_MODE)
     ImGui::StyleColorsDark();
     ImVec4 clearColor = ImVec4(0.2f, 0.2f, 0.2f, 1.00f);
-    auto invisibleColor = IM_COL32(255, 0, 0, 255);
     #else
     ImGui::StyleColorsLight();
     ImVec4 clearColor = ImVec4(0.8f, 0.8f, 0.8f, 1.00f);
@@ -230,7 +230,7 @@ int main(int argc, char** argv)
 
     // Load font
     char font_file[] = "D:\\06_PersonalProjects\\HomeMonitorV2\\Fonts\\Roboto-Regular.ttf";
-    io.Fonts->AddFontFromFileTTF(font_file, 20.0f);
+    io.Fonts->AddFontFromFileTTF(font_file, 16.0f);
 
     // Start rendering loop
     bool done = false;
@@ -280,10 +280,49 @@ int main(int argc, char** argv)
         ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
 
         // Create Homemonitor control window
-        ImGui::Begin("Controls");
+        ImGui::Begin("Information");
+        #if (DEBUG_HOMEMONITOR)
         ImGui::Text("First test with Imgui library");
         ImGui::Text("Application average %.3f ms/frame (%.1f FPS)",
                      1000.0f / io.Framerate, io.Framerate);
+        #endif
+        ImGui::End();
+
+        ImGui::Begin("Controls");
+
+        static char channelInputBuffer[MAX_THINGSPEAK_USER_INPUT_SIZE] = "";
+        ImGui::Text("ThingSpeak API Channel ID");
+        ImGui::InputTextWithHint("##channelInput", "e.g. \"1277292\"",
+                                 channelInputBuffer, IM_ARRAYSIZE(channelInputBuffer));
+
+        static char apiKeyInputBuffer[MAX_THINGSPEAK_USER_INPUT_SIZE] = "";
+        ImGui::Text("ThingSpeak API Key");
+        ImGui::InputTextWithHint("##keyInput", "e.g. \"I4BV5Q70NNDWH0SP\"",
+                                 apiKeyInputBuffer, IM_ARRAYSIZE(apiKeyInputBuffer));
+
+        if (ImGui::Button("Add", ImVec2(100, 0)))
+        {
+            // TODO: Replace with dropdown for functionality to remove objects
+            std::cout << "Channel = " << channelInputBuffer << ", "
+                      << "Key = " << apiKeyInputBuffer << std::endl;
+
+            memset(channelInputBuffer, 0, sizeof(channelInputBuffer));
+            memset(apiKeyInputBuffer, 0, sizeof(apiKeyInputBuffer));
+        }
+
+        ImGui::Dummy(ImVec2(0.0f, 10.0f));
+
+        ImGui::Text("Fetch Latest Data");
+        // TODO: Add dropdown to determine which data to fetch (include "all" option)
+        if (ImGui::Button("Refresh", ImVec2(100, 0)))
+        {
+            xAxisData.clear();
+            yAxisData.clear();
+            dataSize = ts.GetFieldData(1, fieldName, 100, xAxisData, yAxisData);
+
+            assert(dataSize <= MAX_THINGSPEAK_REQUEST_SIZE);
+        }
+
         ImGui::End();
 
         // Refresh data periodically
@@ -297,6 +336,8 @@ int main(int argc, char** argv)
             yAxisData.clear();
             dataSize = ts.GetFieldData(1, fieldName, 100, xAxisData, yAxisData);
 
+            assert(dataSize <= MAX_THINGSPEAK_REQUEST_SIZE);
+
             pollingDelay = std::chrono::steady_clock::now() + std::chrono::minutes(5);
         }
 
@@ -306,10 +347,15 @@ int main(int argc, char** argv)
         float xAxisDataArray[MAX_THINGSPEAK_REQUEST_SIZE];
         float yAxisDataArray[MAX_THINGSPEAK_REQUEST_SIZE];
 
-        for (int i = 0; i < dataSize; i++)
+        if (dataSize > 0)
         {
-            xAxisDataArray[i] = xAxisData[i];
-            yAxisDataArray[i] = yAxisData[i];
+            // At least 1 valid data point obtained from ThingSpeak.
+            // Replace previous set of data
+            for (int i = 0; i < dataSize; i++)
+            {
+                xAxisDataArray[i] = xAxisData[i];
+                yAxisDataArray[i] = yAxisData[i];
+            }
         }
 
         ImVec2 maxWindowSize(-1, -1);

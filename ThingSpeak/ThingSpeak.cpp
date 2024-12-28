@@ -53,6 +53,10 @@ int ThingSpeak::GetFieldData(uint8_t const fieldNum,
     }
 
     json thingSpeakData = GetChannelData(numDataPoints);
+    if (thingSpeakData == NULL)
+    {
+        return -1;
+    }
 
     std::string fieldId = "field" + std::to_string(fieldNum);
     try
