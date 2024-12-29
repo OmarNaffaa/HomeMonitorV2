@@ -13,17 +13,36 @@ using json = nlohmann::json;
 
 typedef std::map<std::string, std::string> thingSpeakEntry;
 
+typedef struct
+{
+    std::string fieldName;
+    std::string timestamp;
+    int entryId;
+    float xAxisDataPoint;
+    float yAxisDataPoint;
+} ThingSpeakFeedEntry_t;
+
+enum class ThingSpeakFieldNum
+{
+    Field1 = 1,
+    Field2,
+    Field3,
+    Field4,
+    Field5,
+    Field6,
+    Field7,
+    Field8
+};
+
 class ThingSpeak
 {
 public:
     ThingSpeak(std::string id, std::string key) :
                thingSpeakChannel(id), thingSpeakKey(key) {}
 
-    int GetFieldData(uint8_t const fieldNum,
-                     std::string& fieldName,
+    int GetFieldData(ThingSpeakFieldNum const fieldNum,
                      uint32_t const numDataPoints,
-                     std::vector<int>& xAxisData,
-                     std::vector<float>& yAxisData);
+                     std::vector<ThingSpeakFeedEntry_t>& data);
 
 private:
 	std::string thingSpeakKey;

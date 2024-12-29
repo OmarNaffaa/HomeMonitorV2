@@ -190,9 +190,11 @@ int main(int argc, char** argv)
     #if (HOMEMONITOR_DARK_MODE)
     ImGui::StyleColorsDark();
     ImVec4 clearColor = ImVec4(0.2f, 0.2f, 0.2f, 1.00f);
+    unsigned int verticalCursorColor = IM_COL32(255, 255, 255, 255);
     #else
     ImGui::StyleColorsLight();
     ImVec4 clearColor = ImVec4(0.8f, 0.8f, 0.8f, 1.00f);
+    unsigned int verticalCursorColor = IM_COL32(0, 0, 0, 255);
     #endif
 
     // When viewports are enabled we tweak WindowRounding/WindowBg
@@ -232,16 +234,24 @@ int main(int argc, char** argv)
     char font_file[] = "D:\\06_PersonalProjects\\HomeMonitorV2\\Fonts\\Roboto-Regular.ttf";
     io.Fonts->AddFontFromFileTTF(font_file, 16.0f);
 
-    // Start rendering loop
-    bool done = false;
-
+    // Declare ThingSpeak structures
     ThingSpeak ts("1277292", "I4BV5Q70NNDWH0SP");
 
+    std::vector<ThingSpeakFeedEntry_t> prevDataPoints;
+    std::vector<ThingSpeakFeedEntry_t> currDataPoints;
+    std::vector<ThingSpeakFeedEntry_t>* dataToDisplay;
+
     std::string fieldName;
-    std::vector<int> xAxisData;
-    std::vector<float> yAxisData;
-    int dataSize;
+    int totalDataPoints;
+    float xAxisDataArray[MAX_THINGSPEAK_REQUEST_SIZE];
+    float yAxisDataArray[MAX_THINGSPEAK_REQUEST_SIZE];
+
+    int result;
     auto pollingDelay = std::chrono::steady_clock::now();
+
+    // Start rendering loop
+    bool done = false;
+    bool selected = true;
 
     while (!done)
     {
@@ -280,26 +290,32 @@ int main(int argc, char** argv)
         ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
 
         // Create Homemonitor control window
-        ImGui::Begin("Information");
-        #if (DEBUG_HOMEMONITOR)
-        ImGui::Text("First test with Imgui library");
-        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)",
-                     1000.0f / io.Framerate, io.Framerate);
-        #endif
-        ImGui::End();
+        ImGui::Begin("Add ThingSpeak Object");
 
-        ImGui::Begin("Controls");
+        static char nameInputBuffer[MAX_THINGSPEAK_USER_INPUT_SIZE] = "";
+        ImGui::Text("Name", ImVec2(150, 0));
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(150.0f);
+        ImGui::InputTextWithHint("##nameInput", "e.g. \"Bedroom\"",
+                                 nameInputBuffer, IM_ARRAYSIZE(nameInputBuffer));
 
         static char channelInputBuffer[MAX_THINGSPEAK_USER_INPUT_SIZE] = "";
-        ImGui::Text("ThingSpeak API Channel ID");
+        ImGui::SameLine();
+        ImGui::Text("Channel ID", ImVec2(150, 0));
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(150.0f);
         ImGui::InputTextWithHint("##channelInput", "e.g. \"1277292\"",
                                  channelInputBuffer, IM_ARRAYSIZE(channelInputBuffer));
 
         static char apiKeyInputBuffer[MAX_THINGSPEAK_USER_INPUT_SIZE] = "";
-        ImGui::Text("ThingSpeak API Key");
+        ImGui::SameLine();
+        ImGui::Text("Key", ImVec2(150, 0));
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(200.0f);
         ImGui::InputTextWithHint("##keyInput", "e.g. \"I4BV5Q70NNDWH0SP\"",
                                  apiKeyInputBuffer, IM_ARRAYSIZE(apiKeyInputBuffer));
 
+        ImGui::SameLine();
         if (ImGui::Button("Add", ImVec2(100, 0)))
         {
             // TODO: Replace with dropdown for functionality to remove objects
@@ -310,20 +326,41 @@ int main(int argc, char** argv)
             memset(apiKeyInputBuffer, 0, sizeof(apiKeyInputBuffer));
         }
 
-        ImGui::Dummy(ImVec2(0.0f, 10.0f));
+        ImGui::End();   // General Controls
 
+        ImGui::Begin("Viewer Properties");
         ImGui::Text("Fetch Latest Data");
-        // TODO: Add dropdown to determine which data to fetch (include "all" option)
-        if (ImGui::Button("Refresh", ImVec2(100, 0)))
+        if (ImGui::Button("Refresh All", ImVec2(100, 0)))
         {
-            xAxisData.clear();
-            yAxisData.clear();
-            dataSize = ts.GetFieldData(1, fieldName, 100, xAxisData, yAxisData);
+            prevDataPoints = currDataPoints;
+            currDataPoints.clear();
 
-            assert(dataSize <= MAX_THINGSPEAK_REQUEST_SIZE);
+            result = ts.GetFieldData(ThingSpeakFieldNum::Field1, 48, currDataPoints);
+            assert(currDataPoints.size() <= MAX_THINGSPEAK_REQUEST_SIZE);
         }
 
-        ImGui::End();
+        ImGui::Dummy(ImVec2(0.0f, 10.0f));
+        ImGui::PushStyleColor(ImGuiCol_CheckMark, ImVec4(0, 0, 0, 0));
+        if (selected)
+        {
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 255, 255));
+        }
+        else
+        {
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 255, 0));
+        }
+        ImGui::Checkbox("ThingSpeak Object Name", &selected);
+        ImGui::PopStyleColor();
+        ImGui::PopStyleColor();
+
+        #if (DEBUG_HOMEMONITOR)
+        ImGui::Dummy(ImVec2(0.0f, 10.0f));
+        ImGui::Text("First test with Imgui library");
+        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)",
+                     1000.0f / io.Framerate, io.Framerate);
+        #endif
+
+        ImGui::End();   // Viewer Properties
 
         // Refresh data periodically
         if (std::chrono::steady_clock::now() > pollingDelay)
@@ -332,11 +369,11 @@ int main(int argc, char** argv)
             std::time_t refreshTime = std::chrono::system_clock::to_time_t(currentTime);
             std::cout << "\nRefreshing data at " << std::ctime(&refreshTime) << std::endl;
 
-            xAxisData.clear();
-            yAxisData.clear();
-            dataSize = ts.GetFieldData(1, fieldName, 100, xAxisData, yAxisData);
+            prevDataPoints = currDataPoints;
+            currDataPoints.clear();
 
-            assert(dataSize <= MAX_THINGSPEAK_REQUEST_SIZE);
+            result = ts.GetFieldData(ThingSpeakFieldNum::Field1, 48, currDataPoints);
+            assert(currDataPoints.size() <= MAX_THINGSPEAK_REQUEST_SIZE);
 
             pollingDelay = std::chrono::steady_clock::now() + std::chrono::minutes(5);
         }
@@ -344,26 +381,75 @@ int main(int argc, char** argv)
         // Create Homemonitor plotting window
         ImGui::Begin("Viewer");
 
-        float xAxisDataArray[MAX_THINGSPEAK_REQUEST_SIZE];
-        float yAxisDataArray[MAX_THINGSPEAK_REQUEST_SIZE];
+        dataToDisplay = (result >= 0) ? &currDataPoints : &prevDataPoints;
 
-        if (dataSize > 0)
+        fieldName = (*dataToDisplay)[0].fieldName;
+        totalDataPoints = dataToDisplay->size();
+
+        for (int i = 0; i < totalDataPoints; i++)
         {
-            // At least 1 valid data point obtained from ThingSpeak.
-            // Replace previous set of data
-            for (int i = 0; i < dataSize; i++)
-            {
-                xAxisDataArray[i] = xAxisData[i];
-                yAxisDataArray[i] = yAxisData[i];
-            }
+            xAxisDataArray[i] = (*dataToDisplay)[i].xAxisDataPoint;
+            yAxisDataArray[i] = (*dataToDisplay)[i].yAxisDataPoint;
         }
 
         ImVec2 maxWindowSize(-1, -1);
         ImPlot::PushStyleVar(ImPlotStyleVar_LineWeight, 3.0f);
-        if (ImPlot::BeginPlot("Weather Data", maxWindowSize)) {
-            ImPlot::SetupAxes("Entry ID", "Temperature / Humidity");
+        if (ImPlot::BeginPlot("Weather Data", maxWindowSize), ImPlotFlags_NoInputs) {
+            ImPlot::SetupAxes("Entry Number", "Temperature / Humidity");
             ImPlot::SetNextMarkerStyle(ImPlotMarker_Circle);
-            ImPlot::PlotLine(fieldName.c_str(), xAxisDataArray, yAxisDataArray, dataSize);
+            if (selected)
+            {
+                ImPlot::PushStyleColor(0, ImVec4(0, 0, 255, 255));
+                ImPlot::PlotLine(fieldName.c_str(), xAxisDataArray, yAxisDataArray,
+                                 totalDataPoints, ImPlotLegendFlags_NoButtons);
+                ImPlot::PopStyleColor();
+
+                if (ImPlot::IsPlotHovered())
+                {
+                    // Get the mouse position in plot coordinates
+                    ImPlotPoint mousePos = ImPlot::GetPlotMousePos();
+                    // Get the current ImGui window draw list
+                    ImDrawList* drawList = ImGui::GetWindowDrawList();
+
+                    // Convert plot coordinates to screen coordinates
+                    ImVec2 plotPos = ImPlot::PlotToPixels(mousePos.x, mousePos.y);
+
+                    // Draw a vertical line at the mouse position
+                    drawList->AddLine(ImVec2(plotPos.x, ImPlot::GetPlotPos().y),
+                                    ImVec2(plotPos.x, (ImPlot::GetPlotPos().y + ImPlot::GetPlotSize().y)),
+                                    verticalCursorColor, 1.0f);
+
+
+                    // Find the closest data point
+                    float minDist = FLT_MAX;
+                    int closestIndex = -1;
+
+                    for (int i = 0; i < IM_ARRAYSIZE(xAxisDataArray); ++i) {
+                        float dist = std::sqrt(std::pow(mousePos.x - xAxisDataArray[i], 2)
+                                    + std::pow(mousePos.y - yAxisDataArray[i], 2));
+                        if (dist < minDist) {
+                            minDist = dist;
+                            closestIndex = i;
+                        }
+                    }
+
+                    // TODO: Search through all points that are checked
+
+                    // Display the closest data point
+                    if (closestIndex != -1) {
+                        ImGui::BeginTooltip();
+                        ImGui::Text("Entry ID (local): %d", closestIndex);
+                        ImGui::Text("Value: %.2f",
+                                    (*dataToDisplay)[closestIndex].yAxisDataPoint);
+                        ImGui::Text("Date/Time Captured (PST): %s",
+                                    (*dataToDisplay)[closestIndex].timestamp.c_str());
+                        ImGui::Text("Entry ID (ThingSpeak): %d",
+                                    (*dataToDisplay)[closestIndex].entryId);
+                        ImGui::EndTooltip();
+                    }
+                }
+            }
+
             ImPlot::EndPlot();
         }
         ImPlot::PopStyleVar();

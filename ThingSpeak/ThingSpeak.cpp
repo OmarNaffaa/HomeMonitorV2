@@ -9,7 +9,8 @@
 #define THINGSPEAK_LOWEST_FIELD_NUMBER    1
 #define THINGSPEAK_HIGHEST_FIELD_NUMBER   8
 
-enum class HttpStatusCode {
+enum class HttpStatusCode
+{
     OK = 200,
     Created = 201,
     Accepted = 202,
@@ -31,26 +32,16 @@ enum class HttpStatusCode {
  * @brief Get ThingSpeak data for a specified field
  * 
  * @param fieldNum      - [Input] Field number to obtain data for
- * @param fieldName     - [Output] Name of field defined in ThingSpeak
  * @param numDataPoints - [Input] Number of data points to request
- * @param xAxisData     - [Output] Data to plot on x-axis (entry_id)
- * @param yAxisData     - [Output] Data to plot on y-axis (field#)
+ * @param data          - [Output] ThingSpeak data object to plot
  * 
- * @return int - Size of data obtained.
- *               Negative value if no data / field does not exist.
+ * @return int - Negative value if no data / field does not exist.
  */
-int ThingSpeak::GetFieldData(uint8_t const fieldNum,
-                             std::string& fieldName,
+int ThingSpeak::GetFieldData(ThingSpeakFieldNum const fieldNum,
                              uint32_t const numDataPoints,
-                             std::vector<int>& xAxisData,
-                             std::vector<float>& yAxisData)
+                             std::vector<ThingSpeakFeedEntry_t>& data)
 {
-    if ((fieldNum < THINGSPEAK_LOWEST_FIELD_NUMBER)
-        || (fieldNum > THINGSPEAK_HIGHEST_FIELD_NUMBER))
-    {
-        std::cerr << "Field number " << fieldNum << " is not supported" << std::endl;
-        return -1;
-    }
+    ThingSpeakFeedEntry_t entry;
 
     json thingSpeakData = GetChannelData(numDataPoints);
     if (thingSpeakData == NULL)
@@ -58,39 +49,32 @@ int ThingSpeak::GetFieldData(uint8_t const fieldNum,
         return -1;
     }
 
-    std::string fieldId = "field" + std::to_string(fieldNum);
-    try
-    {
-        fieldName = thingSpeakData["channel"][fieldId];
-    }
-    catch(const std::out_of_range& e)
-    {
-        std::cerr << e.what() << '\n';
-        return -1;
-    }
+    std::string fieldId = "field" + std::to_string(static_cast<uint8_t>(fieldNum));
 
+    int i = 0;
     for (auto& feed : thingSpeakData["feeds"])
     {
-        // TODO: Get timestamps to display when hovering over data points
-        xAxisData.push_back(feed["entry_id"]);
         try
         {
-            std::string fieldValue = feed[fieldId];
-            yAxisData.push_back(std::stof(fieldValue));
+            entry.timestamp = feed["created_at"];
+            entry.entryId = feed["entry_id"];
+            entry.fieldName = thingSpeakData["channel"][fieldId];
+
+            entry.xAxisDataPoint = i;
+            entry.yAxisDataPoint = std::stof(static_cast<std::string>(feed[fieldId]));
+
+            data.push_back(entry);
+            i++;
         }
         catch(const std::exception& e)
         {
             std::cerr << "Error on entry_id = " << feed["entry_id"]
-                      << ". Value = " << feed[fieldId];
+                      << ". Value = " << static_cast<std::string>(feed[fieldId]);
             std::cerr << e.what() << '\n';
-
-            // Ensure only entries with valid data are kept
-            xAxisData.pop_back();
         }
     }
 
-    assert(xAxisData.size() == yAxisData.size());
-    return xAxisData.size();
+    return 0;
 }
 
 /**
@@ -143,7 +127,7 @@ json ThingSpeak::GetChannelData(uint32_t numEntries)
  */
 std::string ThingSpeak::BuildThingSpeakHttpGetUrl(uint32_t numEntries)
 {
-    std::string url = "https://api.thingSpeak.com/channels/";
+    std::string url = "https://api.thingspeak.com/channels/";
     url += thingSpeakChannel;
     url += "/feeds.json?api_key=";
     url += thingSpeakKey;
