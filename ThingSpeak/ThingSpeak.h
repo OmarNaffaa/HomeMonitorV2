@@ -11,7 +11,7 @@
 
 using json = nlohmann::json;
 
-#define MAX_THINGSPEAK_REQUEST_SIZE   200
+#define MAX_THINGSPEAK_REQUEST_SIZE   100
 
 typedef std::map<std::string, std::string> thingSpeakEntry;
 
@@ -29,6 +29,8 @@ typedef struct
 class ThingSpeak
 {
 public:
+    ThingSpeak() :
+               objectName(""), thingSpeakChannel(""), thingSpeakKey("") {}
     ThingSpeak(std::string name, std::string id, std::string key) :
                objectName(name), thingSpeakChannel(id), thingSpeakKey(key) {}
 

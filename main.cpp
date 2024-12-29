@@ -4,6 +4,7 @@
 
 #include <d3d12.h>
 #include <dxgi1_4.h>
+#include <dwmapi.h>
 #include <tchar.h>
 #include <string>
 #include <fstream>
@@ -20,7 +21,7 @@
 
 #define DEBUG_HOMEMONITOR       true
 #define HOMEMONITOR_DARK_MODE   true
-#define HOMEMONITOR_USE_VSYNC   true
+#define HOMEMONITOR_USE_VSYNC   false
 
 #define MAX_HOMEMONITOR_USER_INPUT_SIZE   30
 
@@ -122,6 +123,37 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg,
                                                              WPARAM wParam, LPARAM lParam);
 
+// HomeMonitor Declarations
+typedef struct
+{
+    unsigned int colorRgba;
+    ImVec4 colorRgb;
+    bool available;
+} ColorOption_t;
+
+typedef struct
+{
+    unsigned int assignedColorRgba;   // RGBA Color. E.g. (255, 255, 255, 0)
+    ImVec4 assignedColorRgb;          // RGB Color. E.g. (1.0, 1.0, 1.0, 0.0)
+} HomeMonitorAssignedColor_t;
+
+typedef struct
+{
+    ThingSpeak thingSpeak;
+    HomeMonitorAssignedColor_t assignedColor;
+
+    // Display properties
+    bool displayData;
+} HomeMonitor_t;
+
+// HomeMonitor Window Creation
+void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMonitors);
+void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& homeMonitors);
+void HomeMonitorCreateTemperatureViewerWindow(std::vector<HomeMonitor_t>& homeMonitors);
+void HomeMonitorCreateHumidityViewerWindow(std::vector<HomeMonitor_t>& homeMonitors);
+
+
+bool HomeMonitorSetColor(HomeMonitor_t& homeMonitor);
 
 int main(int argc, char** argv)
 {
@@ -179,7 +211,7 @@ int main(int argc, char** argv)
     // Setup context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;   // Enable Gamepad Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;      // Enable Docking
@@ -195,7 +227,6 @@ int main(int argc, char** argv)
     ImGui::StyleColorsLight();
     ImVec4 clearColor = ImVec4(0.8f, 0.8f, 0.8f, 1.00f);
     #endif
-    unsigned int verticalCursorColor = IM_COL32(255, 0, 0, 255);
 
     // When viewports are enabled we tweak WindowRounding/WindowBg
     // so platform windows can look identical to regular ones.
@@ -249,12 +280,18 @@ int main(int argc, char** argv)
 
     thingSpeakObjectsFile.close();
 
-    std::vector<ThingSpeak> thingSpeakObjects;
+    std::vector<HomeMonitor_t> homeMonitors;
     for (auto& thingSpeakObject : thingSpeakObjectsJson)
     {
-        thingSpeakObjects.push_back({ thingSpeakObject["name"],
-                                      thingSpeakObject["channel"],
-                                      thingSpeakObject["key"] });
+        HomeMonitor_t homeMonitor;
+
+        homeMonitor.thingSpeak = { thingSpeakObject["name"],
+                                   thingSpeakObject["channel"],
+                                   thingSpeakObject["key"]      };
+
+        HomeMonitorSetColor(homeMonitor);
+
+        homeMonitors.push_back(homeMonitor);
     }
 
     std::string fieldName;
@@ -265,7 +302,6 @@ int main(int argc, char** argv)
 
     // Start rendering loop
     bool done = false;
-    bool selected = true;
 
     while (!done)
     {
@@ -303,80 +339,9 @@ int main(int argc, char** argv)
         // Create docking space
         ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
 
-        // Create Homemonitor control window
-        ImGui::Begin("Add ThingSpeak Object");
+        HomeMonitorCreateViewerPropertiesWindow(homeMonitors);
 
-        static char nameInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE] = "";
-        ImGui::Text("Name", ImVec2(150, 0));
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(150.0f);
-        ImGui::InputTextWithHint("##nameInput", "e.g. \"Bedroom\"",
-                                 nameInputBuffer, IM_ARRAYSIZE(nameInputBuffer));
-
-        static char channelInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE] = "";
-        ImGui::SameLine();
-        ImGui::Text("Channel ID", ImVec2(150, 0));
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(150.0f);
-        ImGui::InputTextWithHint("##channelInput", "e.g. \"1277292\"",
-                                 channelInputBuffer, IM_ARRAYSIZE(channelInputBuffer));
-
-        static char apiKeyInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE] = "";
-        ImGui::SameLine();
-        ImGui::Text("Key", ImVec2(150, 0));
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(200.0f);
-        ImGui::InputTextWithHint("##keyInput", "e.g. \"I4BV5Q70NNDWH0SP\"",
-                                 apiKeyInputBuffer, IM_ARRAYSIZE(apiKeyInputBuffer));
-
-        ImGui::SameLine();
-        if (ImGui::Button("Add", ImVec2(100, 0)))
-        {
-            // TODO: Replace with dropdown for functionality to remove objects
-            std::cout << "Channel = " << channelInputBuffer << ", "
-                      << "Key = " << apiKeyInputBuffer << std::endl;
-
-            memset(channelInputBuffer, 0, sizeof(channelInputBuffer));
-            memset(apiKeyInputBuffer, 0, sizeof(apiKeyInputBuffer));
-        }
-
-        ImGui::End();   // General Controls
-
-        ImGui::Begin("Viewer Properties");
-        ImGui::Text("Fetch Latest Data");
-        if (ImGui::Button("Refresh All", ImVec2(100, 0)))
-        {
-            result = thingSpeakObjects[0].GetFieldData();
-        }
-
-        ImGui::Dummy(ImVec2(0.0f, 10.0f));
-        ImGui::PushStyleColor(ImGuiCol_CheckMark, ImVec4(0, 0, 0, 0));
-        if (selected)
-        {
-            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.0f, 0.5f, 1.0f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.0f, 0.5f, 1.0f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.0f, 0.5f, 1.0f, 0.5f));
-        }
-        else
-        {
-            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
-        }
-        ImGui::Checkbox(thingSpeakObjects[0].GetName().c_str(), &selected);
-        ImGui::PopStyleColor();
-        ImGui::PopStyleColor();
-        ImGui::PopStyleColor();
-        ImGui::PopStyleColor();
-
-        #if (DEBUG_HOMEMONITOR)
-        ImGui::Dummy(ImVec2(0.0f, 10.0f));
-        ImGui::Text("First test with Imgui library");
-        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)",
-                     1000.0f / io.Framerate, io.Framerate);
-        #endif
-
-        ImGui::End();   // Viewer Properties
+        HomeMonitorCreateAddThingSpeakObjectWindow(homeMonitors);
 
         // Refresh data periodically
         if (std::chrono::steady_clock::now() > pollingDelay)
@@ -385,92 +350,14 @@ int main(int argc, char** argv)
             std::time_t refreshTime = std::chrono::system_clock::to_time_t(currentTime);
             std::cout << "\nRefreshing data at " << std::ctime(&refreshTime) << std::endl;
 
-            result = thingSpeakObjects[0].GetFieldData();
+            result = homeMonitors[0].thingSpeak.GetFieldData();
 
             pollingDelay = std::chrono::steady_clock::now() + std::chrono::minutes(5);
         }
 
         // Create Homemonitor plotting windows
-        ImVec2 maxWindowSize(-1, -1);
-
-        ImGui::Begin("Temperature Viewer");
-
-        ImPlot::PushStyleVar(ImPlotStyleVar_LineWeight, 3.0f);
-        if (ImPlot::BeginPlot("Temperature (Fahrenheit)", maxWindowSize), ImPlotFlags_NoInputs) {
-            ImPlot::SetupAxes("Entry Number", "Temperature");
-            ImPlot::SetNextMarkerStyle(ImPlotMarker_Circle);
-            if (selected)
-            {
-                auto xAxisDataArray = thingSpeakObjects[0].GetTemperature()->xAxisData;
-                auto yAxisDataArray = thingSpeakObjects[0].GetTemperature()->yAxisData;
-
-                ImPlot::PushStyleColor(0, ImVec4(0.0f, 0.5f, 1.0f, 1.0f));
-                ImPlot::PlotLine(thingSpeakObjects[0].GetName().c_str(),
-                                 xAxisDataArray,
-                                 yAxisDataArray,
-                                 thingSpeakObjects[0].GetTemperature()->numDataPoints,
-                                 ImPlotLegendFlags_NoButtons);
-                ImPlot::PopStyleColor();
-
-                if (ImPlot::IsPlotHovered())
-                {
-                    // Get the mouse position in plot coordinates
-                    ImPlotPoint mousePos = ImPlot::GetPlotMousePos();
-                    // Get the current ImGui window draw list
-                    ImDrawList* drawList = ImGui::GetWindowDrawList();
-
-                    // Convert plot coordinates to screen coordinates
-                    ImVec2 plotPos = ImPlot::PlotToPixels(mousePos.x, mousePos.y);
-
-                    // Draw a vertical line at the mouse position
-                    drawList->AddLine(ImVec2(plotPos.x, ImPlot::GetPlotPos().y),
-                                    ImVec2(plotPos.x, (ImPlot::GetPlotPos().y + ImPlot::GetPlotSize().y)),
-                                    verticalCursorColor, 1.0f);
-
-                    // Find the closest data point
-                    float minDist = FLT_MAX;
-                    int closestIndex = -1;
-
-                    for (int i = 0; i < thingSpeakObjects[0].GetTemperature()->numDataPoints; i++) {
-                        float dist = std::sqrt(std::pow(mousePos.x - xAxisDataArray[i], 2)
-                                    + std::pow(mousePos.y - yAxisDataArray[i], 2));
-                        if (dist < minDist) {
-                            minDist = dist;
-                            closestIndex = i;
-                        }
-                    }
-
-                    // TODO: Search through all points that are checked
-
-                    // Display the closest data point
-                    if (closestIndex != -1) {
-                        ImGui::BeginTooltip();
-                        ImGui::Text("Entry ID (local): %d", closestIndex);
-                        ImGui::Text("Value: %.2f",
-                                    yAxisDataArray[closestIndex]);
-                        ImGui::Text("Date/Time Captured (PST): %s",
-                                    thingSpeakObjects[0].GetTemperature()->timestamp[closestIndex].c_str());
-                        ImGui::Text("Entry ID (ThingSpeak): %d",
-                                    thingSpeakObjects[0].GetTemperature()->entryId[closestIndex]);
-                        ImGui::EndTooltip();
-                    }
-                }
-            }
-
-            ImPlot::EndPlot();
-        }
-        ImPlot::PopStyleVar();
-        ImGui::End();
-
-        ImGui::Begin("Humidity Viewer");
-
-        ImPlot::PushStyleVar(ImPlotStyleVar_LineWeight, 3.0f);
-        if (ImPlot::BeginPlot(" Relative Humidity (%)", maxWindowSize), ImPlotFlags_NoInputs) {
-        }
-        ImPlot::EndPlot();
-        ImPlot::PopStyleVar();
-
-        ImGui::End();
+        HomeMonitorCreateTemperatureViewerWindow(homeMonitors);
+        HomeMonitorCreateHumidityViewerWindow(homeMonitors);
 
         // Rendering
         ImGui::Render();
@@ -548,6 +435,313 @@ int main(int argc, char** argv)
 }
 
 /**
+ * @brief Create "Viewer Properties" window of HomeMonitor GUI
+ * 
+ */
+void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMonitors)
+{
+    int result;
+
+    ImGui::Begin("Viewer Properties");
+
+    ImGui::Text("Fetch Latest Data");
+
+    if (ImGui::Button("Refresh All", ImVec2(100, 0)))
+    {
+        result = homeMonitors[0].thingSpeak.GetFieldData();
+    }
+
+    ImGui::Dummy(ImVec2(0.0f, 10.0f));
+
+    ImVec4 color;
+    if (homeMonitors[0].displayData)
+    {
+        color = homeMonitors[0].assignedColor.assignedColorRgb;
+    }
+    else
+    {
+        color = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+    }
+
+    ImGui::PushStyleColor(ImGuiCol_CheckMark, ImVec4(0, 0, 0, 0));
+
+    ImVec4 colorOnHover = ImVec4(color.x, color.y, color.z, (color.w * 0.5));
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, color);
+    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, color);
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colorOnHover);
+
+    ImGui::Checkbox(homeMonitors[0].thingSpeak.GetName().c_str(),
+                    &homeMonitors[0].displayData);
+
+    ImGui::PopStyleColor();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleColor();
+
+    #if (DEBUG_HOMEMONITOR)
+    ImGuiIO& io = ImGui::GetIO();
+
+    ImGui::Dummy(ImVec2(0.0f, 10.0f));
+    ImGui::Text("System Diagnostics");
+    ImGui::Text("Application average %.3f ms/frame (%.1f FPS)",
+                    1000.0f / io.Framerate, io.Framerate);
+    #endif
+
+    ImGui::End();   // Viewer Properties
+}
+
+/**
+ * @brief Create "Add ThingSpeak Object" window of HomeMonitor GUI
+ * 
+ */
+void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& homeMonitors)
+{
+    ImGui::Begin("Add ThingSpeak Object");
+
+    static char nameInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE] = "";
+    ImGui::Text("Name", ImVec2(150, 0));
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(150.0f);
+    ImGui::InputTextWithHint("##nameInput", "e.g. \"Bedroom\"",
+                             nameInputBuffer, IM_ARRAYSIZE(nameInputBuffer));
+
+    static char channelInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE] = "";
+    ImGui::SameLine();
+    ImGui::Text("Channel ID", ImVec2(150, 0));
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(150.0f);
+    ImGui::InputTextWithHint("##channelInput", "e.g. \"1277292\"",
+                             channelInputBuffer, IM_ARRAYSIZE(channelInputBuffer));
+
+    static char apiKeyInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE] = "";
+    ImGui::SameLine();
+    ImGui::Text("Key", ImVec2(150, 0));
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(200.0f);
+    ImGui::InputTextWithHint("##keyInput", "e.g. \"I4BV5Q70NNDWH0SP\"",
+                             apiKeyInputBuffer, IM_ARRAYSIZE(apiKeyInputBuffer));
+
+    ImGui::SameLine();
+    if (ImGui::Button("Add", ImVec2(100, 0)))
+    {
+        #if (DEBUG_HOMEMONITOR)
+        std::cout << "Name = " << nameInputBuffer << ", "
+                  << "Channel = " << channelInputBuffer << ", "
+                  << "Key = " << apiKeyInputBuffer << std::endl;
+        #endif
+
+        // TODO: Add entries to JSON file
+
+        memset(channelInputBuffer, 0, sizeof(channelInputBuffer));
+        memset(apiKeyInputBuffer, 0, sizeof(apiKeyInputBuffer));
+    }
+
+    ImGui::End();   // General Controls
+}
+
+void HomeMonitorCreateTemperatureViewerWindow(std::vector<HomeMonitor_t>& homeMonitors)
+{
+    ImVec2 maxWindowSize(-1, -1);
+
+    unsigned int verticalCursorColor = IM_COL32(255, 0, 0, 255);
+
+    ImGui::Begin("Temperature Viewer");
+
+    ImPlot::PushStyleVar(ImPlotStyleVar_LineWeight, 2.5f);
+    if (ImPlot::BeginPlot("Temperature (Fahrenheit)", maxWindowSize), ImPlotFlags_NoInputs)
+    {
+        ImPlot::SetupAxes("Entry Number", "Temperature");
+        ImPlot::SetNextMarkerStyle(ImPlotMarker_Circle);
+        if (homeMonitors[0].displayData)
+        {
+            auto xAxisDataArray = homeMonitors[0].thingSpeak.GetTemperature()->xAxisData;
+            auto yAxisDataArray = homeMonitors[0].thingSpeak.GetTemperature()->yAxisData;
+
+            ImPlot::PushStyleColor(0, homeMonitors[0].assignedColor.assignedColorRgb);
+            ImPlot::PlotLine(homeMonitors[0].thingSpeak.GetName().c_str(),
+                                xAxisDataArray,
+                                yAxisDataArray,
+                                homeMonitors[0].thingSpeak.GetTemperature()->numDataPoints,
+                                ImPlotLegendFlags_NoButtons);
+            ImPlot::PopStyleColor();
+
+            if (ImPlot::IsPlotHovered())
+            {
+                // Get the mouse position in plot coordinates
+                ImPlotPoint mousePos = ImPlot::GetPlotMousePos();
+                // Get the current ImGui window draw list
+                ImDrawList* drawList = ImGui::GetWindowDrawList();
+
+                // Convert plot coordinates to screen coordinates
+                ImVec2 plotPos = ImPlot::PlotToPixels(mousePos.x, mousePos.y);
+
+                // Draw a vertical line at the mouse position
+                drawList->AddLine(ImVec2(plotPos.x, ImPlot::GetPlotPos().y),
+                                ImVec2(plotPos.x, (ImPlot::GetPlotPos().y + ImPlot::GetPlotSize().y)),
+                                verticalCursorColor, 1.0f);
+
+                // Find the closest data point
+                float minDist = FLT_MAX;
+                int closestIndex = -1;
+
+                for (int i = 0; i < homeMonitors[0].thingSpeak.GetTemperature()->numDataPoints; i++) {
+                    float dist = std::sqrt(std::pow(mousePos.x - xAxisDataArray[i], 2)
+                                + std::pow(mousePos.y - yAxisDataArray[i], 2));
+                    if (dist < minDist) {
+                        minDist = dist;
+                        closestIndex = i;
+                    }
+                }
+
+                // TODO: Search through all points that are checked
+
+                // Display the closest data point
+                if (closestIndex != -1) {
+                    ImGui::BeginTooltip();
+                    ImGui::Text("Entry ID (local): %d", closestIndex);
+                    ImGui::Text("Value: %.2f",
+                                yAxisDataArray[closestIndex]);
+                    ImGui::Text("Date/Time Captured (PST): %s",
+                                homeMonitors[0].thingSpeak.GetTemperature()->timestamp[closestIndex].c_str());
+                    ImGui::Text("Entry ID (ThingSpeak): %d",
+                                homeMonitors[0].thingSpeak.GetTemperature()->entryId[closestIndex]);
+                    ImGui::EndTooltip();
+                }
+            }
+        }
+
+        ImPlot::EndPlot();
+    }
+    ImPlot::PopStyleVar();
+    ImGui::End();
+}
+
+void HomeMonitorCreateHumidityViewerWindow(std::vector<HomeMonitor_t>& homeMonitors)
+{
+    ImVec2 maxWindowSize(-1, -1);
+    unsigned int verticalCursorColor = IM_COL32(255, 0, 0, 255);
+
+    ImGui::Begin("Humidity Viewer");
+
+    ImPlot::PushStyleVar(ImPlotStyleVar_LineWeight, 2.5f);
+    if (ImPlot::BeginPlot(" Relative Humidity (%)", maxWindowSize), ImPlotFlags_NoInputs)
+    {
+        ImPlot::SetupAxes("Entry Number", "Temperature");
+        ImPlot::SetNextMarkerStyle(ImPlotMarker_Circle);
+        if (homeMonitors[0].displayData)
+        {
+            auto xAxisDataArray = homeMonitors[0].thingSpeak.GetTemperature()->xAxisData;
+            auto yAxisDataArray = homeMonitors[0].thingSpeak.GetTemperature()->yAxisData;
+
+            ImPlot::PushStyleColor(0, homeMonitors[0].assignedColor.assignedColorRgb);
+            ImPlot::PlotLine(homeMonitors[0].thingSpeak.GetName().c_str(),
+                                xAxisDataArray,
+                                yAxisDataArray,
+                                homeMonitors[0].thingSpeak.GetTemperature()->numDataPoints,
+                                ImPlotLegendFlags_NoButtons);
+            ImPlot::PopStyleColor();
+
+            if (ImPlot::IsPlotHovered())
+            {
+                // Get the mouse position in plot coordinates
+                ImPlotPoint mousePos = ImPlot::GetPlotMousePos();
+                // Get the current ImGui window draw list
+                ImDrawList* drawList = ImGui::GetWindowDrawList();
+
+                // Convert plot coordinates to screen coordinates
+                ImVec2 plotPos = ImPlot::PlotToPixels(mousePos.x, mousePos.y);
+
+                // Draw a vertical line at the mouse position
+                drawList->AddLine(ImVec2(plotPos.x, ImPlot::GetPlotPos().y),
+                                ImVec2(plotPos.x, (ImPlot::GetPlotPos().y + ImPlot::GetPlotSize().y)),
+                                verticalCursorColor, 1.0f);
+
+                // Find the closest data point
+                float minDist = FLT_MAX;
+                int closestIndex = -1;
+
+                for (int i = 0; i < homeMonitors[0].thingSpeak.GetTemperature()->numDataPoints; i++) {
+                    float dist = std::sqrt(std::pow(mousePos.x - xAxisDataArray[i], 2)
+                                + std::pow(mousePos.y - yAxisDataArray[i], 2));
+                    if (dist < minDist) {
+                        minDist = dist;
+                        closestIndex = i;
+                    }
+                }
+
+                // TODO: Search through all points that are checked
+
+                // Display the closest data point
+                if (closestIndex != -1) {
+                    ImGui::BeginTooltip();
+                    ImGui::Text("Entry ID (local): %d", closestIndex);
+                    ImGui::Text("Value: %.2f",
+                                yAxisDataArray[closestIndex]);
+                    ImGui::Text("Date/Time Captured (PST): %s",
+                                homeMonitors[0].thingSpeak.GetTemperature()->timestamp[closestIndex].c_str());
+                    ImGui::Text("Entry ID (ThingSpeak): %d",
+                                homeMonitors[0].thingSpeak.GetTemperature()->entryId[closestIndex]);
+                    ImGui::EndTooltip();
+                }
+            }
+        }
+
+        ImPlot::EndPlot();
+    }
+
+    ImPlot::PopStyleVar();
+    ImGui::End();
+}
+
+/**
+ * @brief Assign a unique color for a HomeMonitor object
+ * 
+ * @param homeMonitor - Object to assign the color to
+ * @return bool - True if a color is 
+ */
+bool HomeMonitorSetColor(HomeMonitor_t& homeMonitor)
+{
+    static std::vector<ColorOption_t> colorOptions =
+    {
+        // Blue
+        {IM_COL32(  0, 114, 189, 255), ImVec4(0.0f,   0.447f, 0.741f, 1.0f), true},
+        // Orange
+        {IM_COL32(217, 120,   0, 255), ImVec4(0.851f, 0.471f, 0.0f,   1.0f), true},
+        // Green
+        {IM_COL32(119, 172,  48, 255), ImVec4(0.467f, 0.675f, 0.188f, 1.0f), true},
+        // Purple
+        {IM_COL32(126,  47, 142, 255), ImVec4(0.494f, 0.184f, 0.557f, 1.0f), true},
+        // Yellow
+        {IM_COL32(237, 177,  32, 255), ImVec4(0.929f, 0.694f, 0.125f, 1.0f), true},
+    };
+
+    uint16_t const maxRgbValue = 255;
+
+    bool colorSelected = false;
+
+    for (auto& option : colorOptions)
+    {
+        if (option.available)
+        {
+            #if (DEBUG_HOMEMONITOR)
+            std::cout << "Assigning color: " << std::endl;
+            std::cout << option.colorRgb.w << ", " << option.colorRgb.x << ", "
+                      << option.colorRgb.y << ", " << option.colorRgb.z << ", " << std::endl;
+            #endif
+            homeMonitor.assignedColor.assignedColorRgba = option.colorRgba;
+            homeMonitor.assignedColor.assignedColorRgb = option.colorRgb;
+
+            colorSelected = true;
+            option.available = false;
+
+            break;
+        }
+    }
+
+    return colorSelected;
+}
+
+/**
  * @brief Win32 Message Handler
  * 
  *        You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to
@@ -576,6 +770,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     }
 
     bool returnZero = false;
+    BOOL darkMode = static_cast<BOOL>(HOMEMONITOR_DARK_MODE);
 
     switch (msg)
     {
@@ -598,6 +793,12 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
             {
                 returnZero = true;
             }
+            break;
+        case WM_CREATE:
+            DwmSetWindowAttribute(hWnd,
+                                  DWMWA_USE_IMMERSIVE_DARK_MODE,
+                                  &darkMode,
+                                  sizeof(darkMode));
             break;
         case WM_DESTROY:
             ::PostQuitMessage(0);
