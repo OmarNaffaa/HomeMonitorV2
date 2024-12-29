@@ -6,6 +6,8 @@
 #include <dxgi1_4.h>
 #include <tchar.h>
 #include <string>
+#include <fstream>
+#include <filesystem>
 
 #include "Imgui/imgui.h"
 #include "Imgui/imgui_impl_win32.h"
@@ -17,7 +19,7 @@
 #include "ThingSpeak/ThingSpeak.h"
 
 #define DEBUG_HOMEMONITOR       true
-#define HOMEMONITOR_DARK_MODE   false
+#define HOMEMONITOR_DARK_MODE   true
 #define HOMEMONITOR_USE_VSYNC   true
 
 #define MAX_HOMEMONITOR_USER_INPUT_SIZE   30
@@ -189,12 +191,11 @@ int main(int argc, char** argv)
     #if (HOMEMONITOR_DARK_MODE)
     ImGui::StyleColorsDark();
     ImVec4 clearColor = ImVec4(0.2f, 0.2f, 0.2f, 1.00f);
-    unsigned int verticalCursorColor = IM_COL32(255, 255, 255, 255);
     #else
     ImGui::StyleColorsLight();
     ImVec4 clearColor = ImVec4(0.8f, 0.8f, 0.8f, 1.00f);
-    unsigned int verticalCursorColor = IM_COL32(0, 0, 0, 255);
     #endif
+    unsigned int verticalCursorColor = IM_COL32(255, 0, 0, 255);
 
     // When viewports are enabled we tweak WindowRounding/WindowBg
     // so platform windows can look identical to regular ones.
@@ -233,8 +234,28 @@ int main(int argc, char** argv)
     char font_file[] = "D:\\06_PersonalProjects\\HomeMonitorV2\\Fonts\\Roboto-Regular.ttf";
     io.Fonts->AddFontFromFileTTF(font_file, 16.0f);
 
-    // Declare ThingSpeak structures
-    ThingSpeak ts("Bedroom", "1277292", "I4BV5Q70NNDWH0SP");
+    // Initialize ThingSpeak structures
+    std::string thingSpeakFilePath = "D:\\06_PersonalProjects\\HomeMonitorV2\\ThingSpeak\\ThingSpeakObjects.json";
+
+    std::ifstream thingSpeakObjectsFile(thingSpeakFilePath);
+    if (!thingSpeakObjectsFile.is_open())
+    {
+        std::cerr << "Could not open " << thingSpeakFilePath << std::endl;
+        return -1;
+    }
+
+    json thingSpeakObjectsJson;
+    thingSpeakObjectsFile >> thingSpeakObjectsJson;
+
+    thingSpeakObjectsFile.close();
+
+    std::vector<ThingSpeak> thingSpeakObjects;
+    for (auto& thingSpeakObject : thingSpeakObjectsJson)
+    {
+        thingSpeakObjects.push_back({ thingSpeakObject["name"],
+                                      thingSpeakObject["channel"],
+                                      thingSpeakObject["key"] });
+    }
 
     std::string fieldName;
     int totalDataPoints;
@@ -325,20 +346,26 @@ int main(int argc, char** argv)
         ImGui::Text("Fetch Latest Data");
         if (ImGui::Button("Refresh All", ImVec2(100, 0)))
         {
-            result = ts.GetFieldData();
+            result = thingSpeakObjects[0].GetFieldData();
         }
 
         ImGui::Dummy(ImVec2(0.0f, 10.0f));
         ImGui::PushStyleColor(ImGuiCol_CheckMark, ImVec4(0, 0, 0, 0));
         if (selected)
         {
-            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 255, 255));
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.0f, 0.5f, 1.0f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.0f, 0.5f, 1.0f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.0f, 0.5f, 1.0f, 0.5f));
         }
         else
         {
-            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 255, 0));
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
         }
-        ImGui::Checkbox(ts.GetName().c_str(), &selected);
+        ImGui::Checkbox(thingSpeakObjects[0].GetName().c_str(), &selected);
+        ImGui::PopStyleColor();
+        ImGui::PopStyleColor();
         ImGui::PopStyleColor();
         ImGui::PopStyleColor();
 
@@ -358,29 +385,30 @@ int main(int argc, char** argv)
             std::time_t refreshTime = std::chrono::system_clock::to_time_t(currentTime);
             std::cout << "\nRefreshing data at " << std::ctime(&refreshTime) << std::endl;
 
-            result = ts.GetFieldData();
+            result = thingSpeakObjects[0].GetFieldData();
 
             pollingDelay = std::chrono::steady_clock::now() + std::chrono::minutes(5);
         }
 
-        // Create Homemonitor plotting window
-        ImGui::Begin("Viewer");
-
+        // Create Homemonitor plotting windows
         ImVec2 maxWindowSize(-1, -1);
+
+        ImGui::Begin("Temperature Viewer");
+
         ImPlot::PushStyleVar(ImPlotStyleVar_LineWeight, 3.0f);
-        if (ImPlot::BeginPlot("Weather Data", maxWindowSize), ImPlotFlags_NoInputs) {
-            ImPlot::SetupAxes("Entry Number", "Temperature / Humidity");
+        if (ImPlot::BeginPlot("Temperature (Fahrenheit)", maxWindowSize), ImPlotFlags_NoInputs) {
+            ImPlot::SetupAxes("Entry Number", "Temperature");
             ImPlot::SetNextMarkerStyle(ImPlotMarker_Circle);
             if (selected)
             {
-                auto xAxisDataArray = ts.GetTemperature()->xAxisData;
-                auto yAxisDataArray = ts.GetTemperature()->yAxisData;
+                auto xAxisDataArray = thingSpeakObjects[0].GetTemperature()->xAxisData;
+                auto yAxisDataArray = thingSpeakObjects[0].GetTemperature()->yAxisData;
 
-                ImPlot::PushStyleColor(0, ImVec4(0, 0, 255, 255));
-                ImPlot::PlotLine(ts.GetName().c_str(),
+                ImPlot::PushStyleColor(0, ImVec4(0.0f, 0.5f, 1.0f, 1.0f));
+                ImPlot::PlotLine(thingSpeakObjects[0].GetName().c_str(),
                                  xAxisDataArray,
                                  yAxisDataArray,
-                                 ts.GetTemperature()->numDataPoints,
+                                 thingSpeakObjects[0].GetTemperature()->numDataPoints,
                                  ImPlotLegendFlags_NoButtons);
                 ImPlot::PopStyleColor();
 
@@ -399,12 +427,11 @@ int main(int argc, char** argv)
                                     ImVec2(plotPos.x, (ImPlot::GetPlotPos().y + ImPlot::GetPlotSize().y)),
                                     verticalCursorColor, 1.0f);
 
-
                     // Find the closest data point
                     float minDist = FLT_MAX;
                     int closestIndex = -1;
 
-                    for (int i = 0; i < ts.GetTemperature()->numDataPoints; i++) {
+                    for (int i = 0; i < thingSpeakObjects[0].GetTemperature()->numDataPoints; i++) {
                         float dist = std::sqrt(std::pow(mousePos.x - xAxisDataArray[i], 2)
                                     + std::pow(mousePos.y - yAxisDataArray[i], 2));
                         if (dist < minDist) {
@@ -422,9 +449,9 @@ int main(int argc, char** argv)
                         ImGui::Text("Value: %.2f",
                                     yAxisDataArray[closestIndex]);
                         ImGui::Text("Date/Time Captured (PST): %s",
-                                    ts.GetTemperature()->timestamp[closestIndex].c_str());
+                                    thingSpeakObjects[0].GetTemperature()->timestamp[closestIndex].c_str());
                         ImGui::Text("Entry ID (ThingSpeak): %d",
-                                    ts.GetTemperature()->entryId[closestIndex]);
+                                    thingSpeakObjects[0].GetTemperature()->entryId[closestIndex]);
                         ImGui::EndTooltip();
                     }
                 }
@@ -433,6 +460,16 @@ int main(int argc, char** argv)
             ImPlot::EndPlot();
         }
         ImPlot::PopStyleVar();
+        ImGui::End();
+
+        ImGui::Begin("Humidity Viewer");
+
+        ImPlot::PushStyleVar(ImPlotStyleVar_LineWeight, 3.0f);
+        if (ImPlot::BeginPlot(" Relative Humidity (%)", maxWindowSize), ImPlotFlags_NoInputs) {
+        }
+        ImPlot::EndPlot();
+        ImPlot::PopStyleVar();
+
         ImGui::End();
 
         // Rendering

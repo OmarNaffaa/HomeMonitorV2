@@ -55,7 +55,9 @@ int ThingSpeak::GetFieldData()
         // Update temperature data
         if (feed[temperature] == nullptr)
         {
+            #if (DEBUG_THINGSPEAK)
             std::cout << "Skipping a temperature data point" << std::endl;
+            #endif
             continue;
         }
         i = temperatureData.numDataPoints;
@@ -71,7 +73,9 @@ int ThingSpeak::GetFieldData()
         // Update humidity data
         if (feed[humidity] == nullptr)
         {
+            #if (DEBUG_THINGSPEAK)
             std::cout << "Skipping a humidity data point" << std::endl;
+            #endif
             continue;
         }
         i = humidityData.numDataPoints;
