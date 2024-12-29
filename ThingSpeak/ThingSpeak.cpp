@@ -29,52 +29,93 @@ enum class HttpStatusCode
 };
 
 /**
- * @brief Get ThingSpeak data for a specified field
+ * @brief Get/Update ThingSpeak object with latest ThingSpeak data
  * 
- * @param fieldNum      - [Input] Field number to obtain data for
- * @param numDataPoints - [Input] Number of data points to request
- * @param data          - [Output] ThingSpeak data object to plot
- * 
- * @return int - Negative value if no data / field does not exist.
+ * @return int - Negative value if data could not be fetched. 0 otherwise
  */
-int ThingSpeak::GetFieldData(ThingSpeakFieldNum const fieldNum,
-                             uint32_t const numDataPoints,
-                             std::vector<ThingSpeakFeedEntry_t>& data)
+int ThingSpeak::GetFieldData()
 {
-    ThingSpeakFeedEntry_t entry;
+    int i;
 
-    json thingSpeakData = GetChannelData(numDataPoints);
+    json thingSpeakData = GetChannelData(MAX_THINGSPEAK_REQUEST_SIZE);
     if (thingSpeakData == NULL)
     {
         return -1;
     }
 
-    std::string fieldId = "field" + std::to_string(static_cast<uint8_t>(fieldNum));
+    // New data fetched; Update internal structures
+    std::string temperature = "field1";
+    std::string humidity = "field2";
 
-    int i = 0;
+    temperatureData.numDataPoints = 0;
+    humidityData.numDataPoints = 0;
+
     for (auto& feed : thingSpeakData["feeds"])
     {
-        try
+        // Update temperature data
+        if (feed[temperature] == nullptr)
         {
-            entry.timestamp = feed["created_at"];
-            entry.entryId = feed["entry_id"];
-            entry.fieldName = thingSpeakData["channel"][fieldId];
-
-            entry.xAxisDataPoint = i;
-            entry.yAxisDataPoint = std::stof(static_cast<std::string>(feed[fieldId]));
-
-            data.push_back(entry);
-            i++;
+            std::cout << "Skipping a temperature data point" << std::endl;
+            continue;
         }
-        catch(const std::exception& e)
+        i = temperatureData.numDataPoints;
+
+        temperatureData.fieldName = thingSpeakData["channel"][temperature];
+        temperatureData.entryId[i] = feed["entry_id"];
+        temperatureData.timestamp[i] = feed["created_at"];
+        temperatureData.xAxisData[i] = i;
+        temperatureData.yAxisData[i] = std::stof(static_cast<std::string>(feed[temperature]));
+
+        temperatureData.numDataPoints++;
+
+        // Update humidity data
+        if (feed[humidity] == nullptr)
         {
-            std::cerr << "Error on entry_id = " << feed["entry_id"]
-                      << ". Value = " << static_cast<std::string>(feed[fieldId]);
-            std::cerr << e.what() << '\n';
+            std::cout << "Skipping a humidity data point" << std::endl;
+            continue;
         }
+        i = humidityData.numDataPoints;
+
+        humidityData.fieldName = thingSpeakData["channel"][humidity];
+        humidityData.entryId[i] = feed["entry_id"];
+        humidityData.timestamp[i] = feed["created_at"];
+        humidityData.xAxisData[i] = i;
+        humidityData.yAxisData[i] = std::stof(static_cast<std::string>(feed[humidity]));
+
+        humidityData.numDataPoints++;
     }
 
     return 0;
+}
+
+/**
+ * @brief Returns name assigned to object
+ * 
+ * @return std::string const - Name of object
+ */
+std::string const ThingSpeak::GetName()
+{
+    return objectName;
+}
+
+/**
+ * @brief Get current temperature data from this object
+ * 
+ * @return ThingSpeakFeedData_t const* const - Array of temperature data
+ */
+ThingSpeakFeedData_t const * const ThingSpeak::GetTemperature()
+{
+    return &temperatureData;
+}
+
+/**
+ * @brief Get current humidity data from this object
+ * 
+ * @return ThingSpeakFeedData_t const* const - Array of humidity data
+ */
+ThingSpeakFeedData_t const * const ThingSpeak::GetHumidity()
+{
+    return &humidityData;
 }
 
 /**

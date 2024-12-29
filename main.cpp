@@ -20,8 +20,7 @@
 #define HOMEMONITOR_DARK_MODE   false
 #define HOMEMONITOR_USE_VSYNC   true
 
-#define MAX_THINGSPEAK_REQUEST_SIZE      1000
-#define MAX_THINGSPEAK_USER_INPUT_SIZE   30
+#define MAX_HOMEMONITOR_USER_INPUT_SIZE   30
 
 #if (DEBUG_HOMEMONITOR)
 #include <iostream>
@@ -235,16 +234,10 @@ int main(int argc, char** argv)
     io.Fonts->AddFontFromFileTTF(font_file, 16.0f);
 
     // Declare ThingSpeak structures
-    ThingSpeak ts("1277292", "I4BV5Q70NNDWH0SP");
-
-    std::vector<ThingSpeakFeedEntry_t> prevDataPoints;
-    std::vector<ThingSpeakFeedEntry_t> currDataPoints;
-    std::vector<ThingSpeakFeedEntry_t>* dataToDisplay;
+    ThingSpeak ts("Bedroom", "1277292", "I4BV5Q70NNDWH0SP");
 
     std::string fieldName;
     int totalDataPoints;
-    float xAxisDataArray[MAX_THINGSPEAK_REQUEST_SIZE];
-    float yAxisDataArray[MAX_THINGSPEAK_REQUEST_SIZE];
 
     int result;
     auto pollingDelay = std::chrono::steady_clock::now();
@@ -292,14 +285,14 @@ int main(int argc, char** argv)
         // Create Homemonitor control window
         ImGui::Begin("Add ThingSpeak Object");
 
-        static char nameInputBuffer[MAX_THINGSPEAK_USER_INPUT_SIZE] = "";
+        static char nameInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE] = "";
         ImGui::Text("Name", ImVec2(150, 0));
         ImGui::SameLine();
         ImGui::SetNextItemWidth(150.0f);
         ImGui::InputTextWithHint("##nameInput", "e.g. \"Bedroom\"",
                                  nameInputBuffer, IM_ARRAYSIZE(nameInputBuffer));
 
-        static char channelInputBuffer[MAX_THINGSPEAK_USER_INPUT_SIZE] = "";
+        static char channelInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE] = "";
         ImGui::SameLine();
         ImGui::Text("Channel ID", ImVec2(150, 0));
         ImGui::SameLine();
@@ -307,7 +300,7 @@ int main(int argc, char** argv)
         ImGui::InputTextWithHint("##channelInput", "e.g. \"1277292\"",
                                  channelInputBuffer, IM_ARRAYSIZE(channelInputBuffer));
 
-        static char apiKeyInputBuffer[MAX_THINGSPEAK_USER_INPUT_SIZE] = "";
+        static char apiKeyInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE] = "";
         ImGui::SameLine();
         ImGui::Text("Key", ImVec2(150, 0));
         ImGui::SameLine();
@@ -332,11 +325,7 @@ int main(int argc, char** argv)
         ImGui::Text("Fetch Latest Data");
         if (ImGui::Button("Refresh All", ImVec2(100, 0)))
         {
-            prevDataPoints = currDataPoints;
-            currDataPoints.clear();
-
-            result = ts.GetFieldData(ThingSpeakFieldNum::Field1, 48, currDataPoints);
-            assert(currDataPoints.size() <= MAX_THINGSPEAK_REQUEST_SIZE);
+            result = ts.GetFieldData();
         }
 
         ImGui::Dummy(ImVec2(0.0f, 10.0f));
@@ -349,7 +338,7 @@ int main(int argc, char** argv)
         {
             ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 255, 0));
         }
-        ImGui::Checkbox("ThingSpeak Object Name", &selected);
+        ImGui::Checkbox(ts.GetName().c_str(), &selected);
         ImGui::PopStyleColor();
         ImGui::PopStyleColor();
 
@@ -369,28 +358,13 @@ int main(int argc, char** argv)
             std::time_t refreshTime = std::chrono::system_clock::to_time_t(currentTime);
             std::cout << "\nRefreshing data at " << std::ctime(&refreshTime) << std::endl;
 
-            prevDataPoints = currDataPoints;
-            currDataPoints.clear();
-
-            result = ts.GetFieldData(ThingSpeakFieldNum::Field1, 48, currDataPoints);
-            assert(currDataPoints.size() <= MAX_THINGSPEAK_REQUEST_SIZE);
+            result = ts.GetFieldData();
 
             pollingDelay = std::chrono::steady_clock::now() + std::chrono::minutes(5);
         }
 
         // Create Homemonitor plotting window
         ImGui::Begin("Viewer");
-
-        dataToDisplay = (result >= 0) ? &currDataPoints : &prevDataPoints;
-
-        fieldName = (*dataToDisplay)[0].fieldName;
-        totalDataPoints = dataToDisplay->size();
-
-        for (int i = 0; i < totalDataPoints; i++)
-        {
-            xAxisDataArray[i] = (*dataToDisplay)[i].xAxisDataPoint;
-            yAxisDataArray[i] = (*dataToDisplay)[i].yAxisDataPoint;
-        }
 
         ImVec2 maxWindowSize(-1, -1);
         ImPlot::PushStyleVar(ImPlotStyleVar_LineWeight, 3.0f);
@@ -399,9 +373,15 @@ int main(int argc, char** argv)
             ImPlot::SetNextMarkerStyle(ImPlotMarker_Circle);
             if (selected)
             {
+                auto xAxisDataArray = ts.GetTemperature()->xAxisData;
+                auto yAxisDataArray = ts.GetTemperature()->yAxisData;
+
                 ImPlot::PushStyleColor(0, ImVec4(0, 0, 255, 255));
-                ImPlot::PlotLine(fieldName.c_str(), xAxisDataArray, yAxisDataArray,
-                                 totalDataPoints, ImPlotLegendFlags_NoButtons);
+                ImPlot::PlotLine(ts.GetName().c_str(),
+                                 xAxisDataArray,
+                                 yAxisDataArray,
+                                 ts.GetTemperature()->numDataPoints,
+                                 ImPlotLegendFlags_NoButtons);
                 ImPlot::PopStyleColor();
 
                 if (ImPlot::IsPlotHovered())
@@ -424,7 +404,7 @@ int main(int argc, char** argv)
                     float minDist = FLT_MAX;
                     int closestIndex = -1;
 
-                    for (int i = 0; i < IM_ARRAYSIZE(xAxisDataArray); ++i) {
+                    for (int i = 0; i < ts.GetTemperature()->numDataPoints; i++) {
                         float dist = std::sqrt(std::pow(mousePos.x - xAxisDataArray[i], 2)
                                     + std::pow(mousePos.y - yAxisDataArray[i], 2));
                         if (dist < minDist) {
@@ -440,11 +420,11 @@ int main(int argc, char** argv)
                         ImGui::BeginTooltip();
                         ImGui::Text("Entry ID (local): %d", closestIndex);
                         ImGui::Text("Value: %.2f",
-                                    (*dataToDisplay)[closestIndex].yAxisDataPoint);
+                                    yAxisDataArray[closestIndex]);
                         ImGui::Text("Date/Time Captured (PST): %s",
-                                    (*dataToDisplay)[closestIndex].timestamp.c_str());
+                                    ts.GetTemperature()->timestamp[closestIndex].c_str());
                         ImGui::Text("Entry ID (ThingSpeak): %d",
-                                    (*dataToDisplay)[closestIndex].entryId);
+                                    ts.GetTemperature()->entryId[closestIndex]);
                         ImGui::EndTooltip();
                     }
                 }
