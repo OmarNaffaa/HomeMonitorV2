@@ -123,7 +123,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg,
                                                              WPARAM wParam, LPARAM lParam);
 
-// HomeMonitor Declarations
+// HomeMonitor Global Definitions
 typedef struct
 {
     unsigned int colorRgba;
@@ -146,14 +146,19 @@ typedef struct
     bool displayData;
 } HomeMonitor_t;
 
+// HomeMonitor Global Declarations
+bool darkMode = static_cast<bool>(HOMEMONITOR_DARK_MODE);
+
 // HomeMonitor Window Creation
 void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMonitors);
 void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& homeMonitors);
 void HomeMonitorCreateTemperatureViewerWindow(std::vector<HomeMonitor_t>& homeMonitors);
 void HomeMonitorCreateHumidityViewerWindow(std::vector<HomeMonitor_t>& homeMonitors);
 
-
+// HomeMonitor Graph Helper Functions
 bool HomeMonitorSetColor(HomeMonitor_t& homeMonitor);
+void HomeMonitorDrawVerticalCursor();
+void HomeMonitorDrawHorizontalLine();
 
 int main(int argc, char** argv)
 {
@@ -377,7 +382,8 @@ int main(int argc, char** argv)
         g_pd3dCommandList->ResourceBarrier(1, &barrier);
 
         // Render Dear ImGui graphics
-        const float clearColorWithAlpha[4] = {
+        const float clearColorWithAlpha[4] = 
+        {
             clearColor.x * clearColor.w,
             clearColor.y * clearColor.w,
             clearColor.z * clearColor.w,
@@ -437,6 +443,7 @@ int main(int argc, char** argv)
 /**
  * @brief Create "Viewer Properties" window of HomeMonitor GUI
  * 
+ *  @param homeMonitors - Collection of HomeMonitor objects to render
  */
 void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMonitors)
 {
@@ -444,14 +451,22 @@ void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMon
 
     ImGui::Begin("Viewer Properties");
 
-    ImGui::Text("Fetch Latest Data");
+    ImGui::Text("General Actions");
+    ImGui::Dummy(ImVec2(0.0f, 10.0f));
 
-    if (ImGui::Button("Refresh All", ImVec2(100, 0)))
+    if (ImGui::Button("Toggle Theme", ImVec2(100, 0)))
+    {
+        (darkMode) ? ImGui::StyleColorsLight() : ImGui::StyleColorsDark();
+        darkMode = !darkMode;
+    }
+    ImGui::Dummy(ImVec2(0.0f, 5.0f));
+
+    if (ImGui::Button("Refresh Data", ImVec2(100, 0)))
     {
         result = homeMonitors[0].thingSpeak.GetFieldData();
     }
 
-    ImGui::Dummy(ImVec2(0.0f, 10.0f));
+    HomeMonitorDrawHorizontalLine();
 
     ImVec4 color;
     if (homeMonitors[0].displayData)
@@ -462,10 +477,9 @@ void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMon
     {
         color = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
     }
+    ImVec4 colorOnHover = ImVec4(color.x, color.y, color.z, (color.w * 0.5));
 
     ImGui::PushStyleColor(ImGuiCol_CheckMark, ImVec4(0, 0, 0, 0));
-
-    ImVec4 colorOnHover = ImVec4(color.x, color.y, color.z, (color.w * 0.5));
     ImGui::PushStyleColor(ImGuiCol_FrameBg, color);
     ImGui::PushStyleColor(ImGuiCol_FrameBgActive, color);
     ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colorOnHover);
@@ -479,12 +493,12 @@ void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMon
     ImGui::PopStyleColor();
 
     #if (DEBUG_HOMEMONITOR)
-    ImGuiIO& io = ImGui::GetIO();
+    HomeMonitorDrawHorizontalLine();
 
-    ImGui::Dummy(ImVec2(0.0f, 10.0f));
+    ImGuiIO& io = ImGui::GetIO();
     ImGui::Text("System Diagnostics");
-    ImGui::Text("Application average %.3f ms/frame (%.1f FPS)",
-                    1000.0f / io.Framerate, io.Framerate);
+    ImGui::BulletText("Averaging %.1f FPS\n(Equal to %.3f ms/frame)",
+                      io.Framerate, (1000.0f / io.Framerate));
     #endif
 
     ImGui::End();   // Viewer Properties
@@ -493,6 +507,7 @@ void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMon
 /**
  * @brief Create "Add ThingSpeak Object" window of HomeMonitor GUI
  * 
+ * @param homeMonitors - Collection of HomeMonitor objects to render
  */
 void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& homeMonitors)
 {
@@ -539,11 +554,14 @@ void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& home
     ImGui::End();   // General Controls
 }
 
+/**
+ * @brief Create temperature graph HomeMonitor GUI
+ * 
+ * @param homeMonitors - Collection of HomeMonitor objects to render
+ */
 void HomeMonitorCreateTemperatureViewerWindow(std::vector<HomeMonitor_t>& homeMonitors)
 {
     ImVec2 maxWindowSize(-1, -1);
-
-    unsigned int verticalCursorColor = IM_COL32(255, 0, 0, 255);
 
     ImGui::Begin("Temperature Viewer");
 
@@ -551,7 +569,6 @@ void HomeMonitorCreateTemperatureViewerWindow(std::vector<HomeMonitor_t>& homeMo
     if (ImPlot::BeginPlot("Temperature (Fahrenheit)", maxWindowSize), ImPlotFlags_NoInputs)
     {
         ImPlot::SetupAxes("Entry Number", "Temperature");
-        ImPlot::SetNextMarkerStyle(ImPlotMarker_Circle);
         if (homeMonitors[0].displayData)
         {
             auto xAxisDataArray = homeMonitors[0].thingSpeak.GetTemperature()->xAxisData;
@@ -567,18 +584,9 @@ void HomeMonitorCreateTemperatureViewerWindow(std::vector<HomeMonitor_t>& homeMo
 
             if (ImPlot::IsPlotHovered())
             {
-                // Get the mouse position in plot coordinates
                 ImPlotPoint mousePos = ImPlot::GetPlotMousePos();
-                // Get the current ImGui window draw list
-                ImDrawList* drawList = ImGui::GetWindowDrawList();
 
-                // Convert plot coordinates to screen coordinates
-                ImVec2 plotPos = ImPlot::PlotToPixels(mousePos.x, mousePos.y);
-
-                // Draw a vertical line at the mouse position
-                drawList->AddLine(ImVec2(plotPos.x, ImPlot::GetPlotPos().y),
-                                ImVec2(plotPos.x, (ImPlot::GetPlotPos().y + ImPlot::GetPlotSize().y)),
-                                verticalCursorColor, 1.0f);
+                HomeMonitorDrawVerticalCursor();
 
                 // Find the closest data point
                 float minDist = FLT_MAX;
@@ -616,51 +624,45 @@ void HomeMonitorCreateTemperatureViewerWindow(std::vector<HomeMonitor_t>& homeMo
     ImGui::End();
 }
 
+/**
+ * @brief Create humidity graph HomeMonitor GUI
+ * 
+ * @param homeMonitors - Collection of HomeMonitor objects to render
+ */
 void HomeMonitorCreateHumidityViewerWindow(std::vector<HomeMonitor_t>& homeMonitors)
 {
     ImVec2 maxWindowSize(-1, -1);
-    unsigned int verticalCursorColor = IM_COL32(255, 0, 0, 255);
 
     ImGui::Begin("Humidity Viewer");
 
     ImPlot::PushStyleVar(ImPlotStyleVar_LineWeight, 2.5f);
     if (ImPlot::BeginPlot(" Relative Humidity (%)", maxWindowSize), ImPlotFlags_NoInputs)
     {
-        ImPlot::SetupAxes("Entry Number", "Temperature");
-        ImPlot::SetNextMarkerStyle(ImPlotMarker_Circle);
+        ImPlot::SetupAxes("Entry Number", "Humidity");
         if (homeMonitors[0].displayData)
         {
-            auto xAxisDataArray = homeMonitors[0].thingSpeak.GetTemperature()->xAxisData;
-            auto yAxisDataArray = homeMonitors[0].thingSpeak.GetTemperature()->yAxisData;
+            auto xAxisDataArray = homeMonitors[0].thingSpeak.GetHumidity()->xAxisData;
+            auto yAxisDataArray = homeMonitors[0].thingSpeak.GetHumidity()->yAxisData;
 
             ImPlot::PushStyleColor(0, homeMonitors[0].assignedColor.assignedColorRgb);
             ImPlot::PlotLine(homeMonitors[0].thingSpeak.GetName().c_str(),
-                                xAxisDataArray,
-                                yAxisDataArray,
-                                homeMonitors[0].thingSpeak.GetTemperature()->numDataPoints,
-                                ImPlotLegendFlags_NoButtons);
+                             xAxisDataArray,
+                             yAxisDataArray,
+                             homeMonitors[0].thingSpeak.GetHumidity()->numDataPoints,
+                             ImPlotLegendFlags_NoButtons);
             ImPlot::PopStyleColor();
 
             if (ImPlot::IsPlotHovered())
             {
-                // Get the mouse position in plot coordinates
                 ImPlotPoint mousePos = ImPlot::GetPlotMousePos();
-                // Get the current ImGui window draw list
-                ImDrawList* drawList = ImGui::GetWindowDrawList();
-
-                // Convert plot coordinates to screen coordinates
-                ImVec2 plotPos = ImPlot::PlotToPixels(mousePos.x, mousePos.y);
-
-                // Draw a vertical line at the mouse position
-                drawList->AddLine(ImVec2(plotPos.x, ImPlot::GetPlotPos().y),
-                                ImVec2(plotPos.x, (ImPlot::GetPlotPos().y + ImPlot::GetPlotSize().y)),
-                                verticalCursorColor, 1.0f);
+                
+                HomeMonitorDrawVerticalCursor();
 
                 // Find the closest data point
                 float minDist = FLT_MAX;
                 int closestIndex = -1;
 
-                for (int i = 0; i < homeMonitors[0].thingSpeak.GetTemperature()->numDataPoints; i++) {
+                for (int i = 0; i < homeMonitors[0].thingSpeak.GetHumidity()->numDataPoints; i++) {
                     float dist = std::sqrt(std::pow(mousePos.x - xAxisDataArray[i], 2)
                                 + std::pow(mousePos.y - yAxisDataArray[i], 2));
                     if (dist < minDist) {
@@ -675,12 +677,12 @@ void HomeMonitorCreateHumidityViewerWindow(std::vector<HomeMonitor_t>& homeMonit
                 if (closestIndex != -1) {
                     ImGui::BeginTooltip();
                     ImGui::Text("Entry ID (local): %d", closestIndex);
-                    ImGui::Text("Value: %.2f",
+                    ImGui::Text("Humidity: %.2f",
                                 yAxisDataArray[closestIndex]);
                     ImGui::Text("Date/Time Captured (PST): %s",
-                                homeMonitors[0].thingSpeak.GetTemperature()->timestamp[closestIndex].c_str());
+                                homeMonitors[0].thingSpeak.GetHumidity()->timestamp[closestIndex].c_str());
                     ImGui::Text("Entry ID (ThingSpeak): %d",
-                                homeMonitors[0].thingSpeak.GetTemperature()->entryId[closestIndex]);
+                                homeMonitors[0].thingSpeak.GetHumidity()->entryId[closestIndex]);
                     ImGui::EndTooltip();
                 }
             }
@@ -742,6 +744,41 @@ bool HomeMonitorSetColor(HomeMonitor_t& homeMonitor)
 }
 
 /**
+ * @brief Draw vertical bar at cursor on plot this function is called within
+ * 
+ */
+void HomeMonitorDrawVerticalCursor()
+{
+    unsigned int verticalCursorColor = IM_COL32(255, 0, 0, 255);
+
+    ImPlotPoint mousePos = ImPlot::GetPlotMousePos();
+
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+
+    ImVec2 plotPos = ImPlot::PlotToPixels(mousePos.x, mousePos.y);
+
+    auto pointOne = ImVec2(plotPos.x, ImPlot::GetPlotPos().y);
+    auto pointTwo = ImVec2(plotPos.x, (ImPlot::GetPlotPos().y + ImPlot::GetPlotSize().y));
+    drawList->AddLine(pointOne, pointTwo, verticalCursorColor, 1.0f);
+}
+
+
+void HomeMonitorDrawHorizontalLine()
+{
+    float const spacing = 10.0;
+    float const margin  = 20.0;
+
+    ImGui::Dummy(ImVec2(0.0f, spacing));
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImVec2 start = ImGui::GetCursorScreenPos();
+    ImVec2 end = ImVec2((start.x + ImGui::GetWindowWidth() - margin), start.y);
+    draw_list->AddLine(start, end, IM_COL32(128, 128, 128, 60), 0.5f);
+
+    ImGui::Dummy(ImVec2(0.0f, spacing));
+}
+
+/**
  * @brief Win32 Message Handler
  * 
  *        You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to
@@ -770,7 +807,6 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     }
 
     bool returnZero = false;
-    BOOL darkMode = static_cast<BOOL>(HOMEMONITOR_DARK_MODE);
 
     switch (msg)
     {
@@ -786,6 +822,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 assert(SUCCEEDED(result) && "Failed to resize swapchain.");
                 CreateRenderTarget();
             }
+
             returnZero = true;
         case WM_SYSCOMMAND:
             // Disable ALT application menu
@@ -793,12 +830,6 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
             {
                 returnZero = true;
             }
-            break;
-        case WM_CREATE:
-            DwmSetWindowAttribute(hWnd,
-                                  DWMWA_USE_IMMERSIVE_DARK_MODE,
-                                  &darkMode,
-                                  sizeof(darkMode));
             break;
         case WM_DESTROY:
             ::PostQuitMessage(0);
