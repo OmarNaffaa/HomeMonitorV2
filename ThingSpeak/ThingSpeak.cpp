@@ -93,44 +93,67 @@ int ThingSpeak::GetFieldData()
 }
 
 /**
- * @brief Returns name assigned to object
+ * @brief Returns the name assigned to object
  * 
  * @return std::string const - Name of object
  */
-std::string const ThingSpeak::GetName()
-{
-    return objectName;
-}
+std::string const ThingSpeak::GetName() { return objectName; }
+
+/**
+ * @brief Returns the API channel assigned to object
+ * 
+ * @return std::string const - Name of object
+ */
+std::string const ThingSpeak::GetChannel() { return thingSpeakChannel; }
+
+/**
+ * @brief Returns the API key assigned to object
+ * 
+ * @return std::string const - Name of object
+ */
+std::string const ThingSpeak::GetKey() { return thingSpeakKey; }
+
+/**
+ * @brief Set the name assigned to object
+ * 
+ * @param name - Object name
+ */
+void ThingSpeak::SetName(std::string name) { objectName = name; }
+
+/**
+ * @brief Set the API channel assigned to object
+ * 
+ * @param channel - ThingSpeak API channel
+ */
+void ThingSpeak::SetChannel(std::string channel) { thingSpeakChannel = channel; }
+
+/**
+ * @brief Set the API key assigned to object
+ * 
+ * @param key - ThingSpeak API key
+ */
+void ThingSpeak::SetKey(std::string key) { thingSpeakKey = key; }
 
 /**
  * @brief Get current temperature data from this object
  * 
  * @return ThingSpeakFeedData_t const* const - Array of temperature data
  */
-ThingSpeakFeedData_t const * const ThingSpeak::GetTemperature()
-{
-    return &temperatureData;
-}
+ThingSpeakFeedData_t const * const ThingSpeak::GetTemperature() { return &temperatureData; }
 
 /**
  * @brief Get current humidity data from this object
  * 
  * @return ThingSpeakFeedData_t const* const - Array of humidity data
  */
-ThingSpeakFeedData_t const * const ThingSpeak::GetHumidity()
-{
-    return &humidityData;
-}
+ThingSpeakFeedData_t const * const ThingSpeak::GetHumidity() { return &humidityData; }
 
 /**
  * @brief Determines if valid data was fetched from ThingSpeak
  * 
  * @return True if data was successfully fetched. False otherwise
  */
-bool const ThingSpeak::ValidData()
-{
-    return validDataFetched;
-}
+bool const ThingSpeak::ValidData() { return validDataFetched; }
 
 /**
  * @brief Perform an HTTP GET call to ThingSpeak endpoint to obtain

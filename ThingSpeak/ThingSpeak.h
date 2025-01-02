@@ -42,6 +42,11 @@ public:
 
     int GetFieldData();
     std::string const GetName();
+    std::string const GetChannel();
+    std::string const GetKey();
+    void SetName(std::string name);
+    void SetChannel(std::string channel);
+    void SetKey(std::string key);
     ThingSpeakFeedData_t const * const GetTemperature();
     ThingSpeakFeedData_t const * const GetHumidity();
     bool const ValidData();
@@ -49,8 +54,8 @@ public:
 private:
     // Member Variables
     std::string objectName;
+    std::string thingSpeakChannel;
 	std::string thingSpeakKey;
-	std::string thingSpeakChannel;
 
     bool validDataFetched;
     ThingSpeakFeedData_t temperatureData;

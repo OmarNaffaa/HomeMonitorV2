@@ -514,6 +514,120 @@ void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMon
         ImGui::PopStyleColor();
     }
 
+    // Only allow edits/removals if there are objects to modify
+    if (homeMonitors.size() > 0)
+    {
+        HomeMonitorDrawHorizontalLine();
+
+        static int selected = 0;
+        static int lastSelection = -1;
+        char names[10][MAX_HOMEMONITOR_USER_INPUT_SIZE];
+        const char* options[10];
+
+        int dropdownItem;
+        for (dropdownItem = 0; dropdownItem < homeMonitors.size(); dropdownItem++)
+        {
+            strncpy(names[dropdownItem],
+                    homeMonitors[dropdownItem].thingSpeak.GetName().c_str(),
+                    MAX_HOMEMONITOR_USER_INPUT_SIZE);
+            options[dropdownItem] = names[dropdownItem];
+        }
+
+        if (ImGui::Combo(" ", &selected, options, dropdownItem))
+        {
+            #if (DEBUG_HOMEMONITOR)
+            std::cout << "Current Index = " << selected << std::endl;
+            #endif
+        }
+
+        ImGui::Dummy(ImVec2(0.0f, 10.0f));
+
+        ImGui::Text("Edit/Remove Object");
+
+        ImGui::Dummy(ImVec2(0.0f, 10.0f));
+
+        auto homeMonitor = homeMonitors[selected];
+        static char nameInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE];
+        ImGui::Text("Name", ImVec2(160, 0));
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::InputTextWithHint("##nameInput", "e.g. \"Bedroom\"",
+                                nameInputBuffer, IM_ARRAYSIZE(nameInputBuffer));
+
+        static char channelInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE];
+        ImGui::Text("Channel ID", ImVec2(160, 0));
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::InputTextWithHint("##channelInput", "e.g. \"1277292\"",
+                                channelInputBuffer, IM_ARRAYSIZE(channelInputBuffer));
+
+        static char keyInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE];
+        ImGui::Text("Key", ImVec2(160, 0));
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::InputTextWithHint("##keyInput", "e.g. \"I4BV5Q70NNDWH0SP\"",
+                                keyInputBuffer, IM_ARRAYSIZE(keyInputBuffer));
+
+        if (selected != lastSelection)
+        {
+            // Only populate entry input text boxes on initial/new selections.
+            // Otherwise user input is overwritten
+            strncpy(nameInputBuffer, homeMonitors[selected].thingSpeak.GetName().c_str(),
+                    MAX_HOMEMONITOR_USER_INPUT_SIZE);
+            strncpy(channelInputBuffer, homeMonitors[selected].thingSpeak.GetChannel().c_str(),
+                    MAX_HOMEMONITOR_USER_INPUT_SIZE);
+            strncpy(keyInputBuffer, homeMonitors[selected].thingSpeak.GetKey().c_str(),
+                    MAX_HOMEMONITOR_USER_INPUT_SIZE);
+
+            lastSelection = selected;
+        }
+
+        ImGui::Dummy(ImVec2(0.0f, 10.0f));
+
+        if (ImGui::Button("Save", ImVec2(75, 0)))
+        {
+            homeMonitors[selected].thingSpeak.SetName(std::string(nameInputBuffer));
+            homeMonitors[selected].thingSpeak.SetChannel(std::string(channelInputBuffer));
+            homeMonitors[selected].thingSpeak.SetKey(std::string(keyInputBuffer));
+
+            json newFileContent;
+
+            for (auto& homeMonitor : homeMonitors)
+            {
+                newFileContent.push_back({
+                    {"name", homeMonitor.thingSpeak.GetName()},
+                    {"channel", homeMonitor.thingSpeak.GetChannel()},
+                    {"key", homeMonitor.thingSpeak.GetKey()}
+                });
+            }
+
+            std::ofstream outputFile(thingSpeakFilePath);
+            outputFile << newFileContent.dump(4);
+            outputFile.close();
+        }
+
+        ImGui::SameLine();
+
+        if (ImGui::Button("Remove", ImVec2(75, 0)))
+        {
+            homeMonitors.erase(homeMonitors.begin() + selected);
+
+            json newFileContent;
+
+            for (auto& homeMonitor : homeMonitors)
+            {
+                newFileContent.push_back({
+                    {"name", homeMonitor.thingSpeak.GetName()},
+                    {"channel", homeMonitor.thingSpeak.GetChannel()},
+                    {"key", homeMonitor.thingSpeak.GetKey()}
+                });
+            }
+
+            std::ofstream outputFile(thingSpeakFilePath);
+            outputFile << newFileContent.dump(4);
+            outputFile.close();
+
+            selected = 0;
+        }
+    } 
+
     #if (DEBUG_HOMEMONITOR)
     HomeMonitorDrawHorizontalLine();
 
@@ -535,14 +649,14 @@ void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& home
 {
     ImGui::Begin("Add ThingSpeak Object");
 
-    static char nameInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE] = "\0";
+    static char nameInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE];
     ImGui::Text("Name", ImVec2(150, 0));
     ImGui::SameLine();
     ImGui::SetNextItemWidth(150.0f);
     ImGui::InputTextWithHint("##nameInput", "e.g. \"Bedroom\"",
                              nameInputBuffer, IM_ARRAYSIZE(nameInputBuffer));
 
-    static char channelInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE] = "\0";
+    static char channelInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE];
     ImGui::SameLine();
     ImGui::Text("Channel ID", ImVec2(150, 0));
     ImGui::SameLine();
@@ -550,13 +664,13 @@ void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& home
     ImGui::InputTextWithHint("##channelInput", "e.g. \"1277292\"",
                              channelInputBuffer, IM_ARRAYSIZE(channelInputBuffer));
 
-    static char apiKeyInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE] = "\0";
+    static char keyInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE];
     ImGui::SameLine();
     ImGui::Text("Key", ImVec2(150, 0));
     ImGui::SameLine();
     ImGui::SetNextItemWidth(200.0f);
     ImGui::InputTextWithHint("##keyInput", "e.g. \"I4BV5Q70NNDWH0SP\"",
-                             apiKeyInputBuffer, IM_ARRAYSIZE(apiKeyInputBuffer));
+                             keyInputBuffer, IM_ARRAYSIZE(keyInputBuffer));
 
     ImGui::SameLine();
     if (ImGui::Button("Add", ImVec2(100, 0)))
@@ -564,17 +678,17 @@ void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& home
         #if (DEBUG_HOMEMONITOR)
         std::cout << "Name = " << nameInputBuffer << ", "
                   << "Channel = " << channelInputBuffer << ", "
-                  << "Key = " << apiKeyInputBuffer << std::endl;
+                  << "Key = " << keyInputBuffer << std::endl;
         #endif
 
-        if (nameInputBuffer[0] && channelInputBuffer[0] && apiKeyInputBuffer[0])
+        if (nameInputBuffer[0] && channelInputBuffer[0] && keyInputBuffer[0])
         {
             // Add to running instance of HomeMonitor
             HomeMonitor_t homeMonitor;
 
             homeMonitor.thingSpeak = { nameInputBuffer,
                                        channelInputBuffer,
-                                       apiKeyInputBuffer   };
+                                       keyInputBuffer   };
 
             if (!HomeMonitorSetColor(homeMonitor))
             {
@@ -602,7 +716,7 @@ void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& home
             thingSpeakObjectsJson.push_back({
                 {"name", nameInputBuffer},
                 {"channel", channelInputBuffer},
-                {"key", apiKeyInputBuffer}
+                {"key", keyInputBuffer}
             });
 
             std::ofstream outputFile(thingSpeakFilePath);
@@ -611,7 +725,7 @@ void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& home
 
             memset(nameInputBuffer, 0, sizeof(nameInputBuffer));
             memset(channelInputBuffer, 0, sizeof(channelInputBuffer));
-            memset(apiKeyInputBuffer, 0, sizeof(apiKeyInputBuffer));
+            memset(keyInputBuffer, 0, sizeof(keyInputBuffer));
         }
     }
 
@@ -719,8 +833,10 @@ void HomeMonitorCreateThingSpeakViewerWindow(std::string name,
                 float xPoint[] = {static_cast<float>(entryId)};
                 float yPoint[] = {dataset->yAxisData[entryId]};
                 ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(1.0, 0.0, 0.0, 1.0));
+                ImPlot::PushStyleColor(ImPlotCol_MarkerOutline, ImVec4(0.7, 0.0, 0.0, 1.0));
                 ImPlot::PlotScatter("Closest Point", xPoint, yPoint,
                                     IM_ARRAYSIZE(xPoint), ImPlotLegendFlags_NoButtons);
+                ImPlot::PopStyleColor();
                 ImPlot::PopStyleColor();
             }
         }
