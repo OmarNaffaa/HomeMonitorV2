@@ -123,6 +123,16 @@ ThingSpeakFeedData_t const * const ThingSpeak::GetHumidity()
 }
 
 /**
+ * @brief Determines if valid data was fetched from ThingSpeak
+ * 
+ * @return True if data was successfully fetched. False otherwise
+ */
+bool const ThingSpeak::ValidData()
+{
+    return validDataFetched;
+}
+
+/**
  * @brief Perform an HTTP GET call to ThingSpeak endpoint to obtain
  *        data in JSON format
  * 
@@ -139,7 +149,8 @@ json ThingSpeak::GetChannelData(uint32_t numEntries)
 
     json thingSpeakData = NULL;
 
-    if (result.status_code == static_cast<long>(HttpStatusCode::OK))
+    validDataFetched = (result.status_code == static_cast<long>(HttpStatusCode::OK));
+    if (validDataFetched)
     {
         std::cout << "\nGot successful response from " << thingSpeakUrl << std::endl;
         

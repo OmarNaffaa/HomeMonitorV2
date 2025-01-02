@@ -155,6 +155,10 @@ typedef struct
 // HomeMonitor Global Declarations
 bool darkMode = false;
 
+std::string basePath = "D:\\06_PersonalProjects\\HomeMonitorV2";
+std::string fontFilePath = basePath + "\\Fonts\\Roboto-Regular.ttf";
+std::string thingSpeakFilePath = basePath + "\\ThingSpeak\\ThingSpeakObjects.json";
+
 // HomeMonitor Window Creation
 void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMonitors);
 void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& homeMonitors);
@@ -257,12 +261,9 @@ int main(int argc, char** argv)
     ImGui_ImplDX12_Init(&init_info);
 
     // Load font
-    char font_file[] = "D:\\06_PersonalProjects\\HomeMonitorV2\\Fonts\\Roboto-Regular.ttf";
-    io.Fonts->AddFontFromFileTTF(font_file, 16.0f);
+    io.Fonts->AddFontFromFileTTF(fontFilePath.c_str(), 16.0f);
 
     // Initialize ThingSpeak structures
-    std::string thingSpeakFilePath = "D:\\06_PersonalProjects\\HomeMonitorV2\\ThingSpeak\\ThingSpeakObjects.json";
-
     std::ifstream thingSpeakObjectsFile(thingSpeakFilePath);
     if (!thingSpeakObjectsFile.is_open())
     {
@@ -347,7 +348,10 @@ int main(int argc, char** argv)
             std::time_t refreshTime = std::chrono::system_clock::to_time_t(currentTime);
             std::cout << "\nRefreshing data at " << std::ctime(&refreshTime) << std::endl;
 
-            result = homeMonitors[0].thingSpeak.GetFieldData();
+            for (auto& homeMonitor : homeMonitors)
+            {
+                result = homeMonitor.thingSpeak.GetFieldData();
+            }
 
             pollingDelay = std::chrono::steady_clock::now() + std::chrono::minutes(5);
         }
@@ -468,7 +472,10 @@ void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMon
 
     if (ImGui::Button("Refresh Data", ImVec2(100, 0)))
     {
-        result = homeMonitors[0].thingSpeak.GetFieldData();
+        for (auto& homeMonitor : homeMonitors)
+        {
+            result = homeMonitor.thingSpeak.GetFieldData();
+        }
     }
 
     HomeMonitorDrawHorizontalLine();
@@ -476,29 +483,36 @@ void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMon
     ImGui::Text("Toggle Plot Visibility");
     ImGui::Dummy(ImVec2(0.0f, 10.0f));
 
-    ImVec4 color;
-    if (homeMonitors[0].displayData)
+    for (auto& homeMonitor : homeMonitors)
     {
-        color = homeMonitors[0].assignedColor.assignedColorRgb;
+        ImVec4 color;
+        if (homeMonitor.displayData)
+        {
+            color = homeMonitor.assignedColor.assignedColorRgb;
+        }
+        else
+        {
+            color = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+        }
+        ImVec4 colorOnHover = ImVec4(color.x, color.y, color.z, (color.w * 0.5));
+
+        ImGui::PushStyleColor(ImGuiCol_CheckMark, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, color);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, color);
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colorOnHover);
+
+        std::string checkBoxName = homeMonitor.thingSpeak.GetName();
+        if (!homeMonitor.thingSpeak.ValidData())
+        {
+            checkBoxName += "\n(Error fetching data)";
+        }
+        ImGui::Checkbox(checkBoxName.c_str(), &homeMonitor.displayData);
+
+        ImGui::PopStyleColor();
+        ImGui::PopStyleColor();
+        ImGui::PopStyleColor();
+        ImGui::PopStyleColor();
     }
-    else
-    {
-        color = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
-    }
-    ImVec4 colorOnHover = ImVec4(color.x, color.y, color.z, (color.w * 0.5));
-
-    ImGui::PushStyleColor(ImGuiCol_CheckMark, ImVec4(0, 0, 0, 0));
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, color);
-    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, color);
-    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, colorOnHover);
-
-    ImGui::Checkbox(homeMonitors[0].thingSpeak.GetName().c_str(),
-                    &homeMonitors[0].displayData);
-
-    ImGui::PopStyleColor();
-    ImGui::PopStyleColor();
-    ImGui::PopStyleColor();
-    ImGui::PopStyleColor();
 
     #if (DEBUG_HOMEMONITOR)
     HomeMonitorDrawHorizontalLine();
@@ -521,14 +535,14 @@ void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& home
 {
     ImGui::Begin("Add ThingSpeak Object");
 
-    static char nameInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE] = "";
+    static char nameInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE] = "\0";
     ImGui::Text("Name", ImVec2(150, 0));
     ImGui::SameLine();
     ImGui::SetNextItemWidth(150.0f);
     ImGui::InputTextWithHint("##nameInput", "e.g. \"Bedroom\"",
                              nameInputBuffer, IM_ARRAYSIZE(nameInputBuffer));
 
-    static char channelInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE] = "";
+    static char channelInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE] = "\0";
     ImGui::SameLine();
     ImGui::Text("Channel ID", ImVec2(150, 0));
     ImGui::SameLine();
@@ -536,7 +550,7 @@ void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& home
     ImGui::InputTextWithHint("##channelInput", "e.g. \"1277292\"",
                              channelInputBuffer, IM_ARRAYSIZE(channelInputBuffer));
 
-    static char apiKeyInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE] = "";
+    static char apiKeyInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE] = "\0";
     ImGui::SameLine();
     ImGui::Text("Key", ImVec2(150, 0));
     ImGui::SameLine();
@@ -553,74 +567,55 @@ void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& home
                   << "Key = " << apiKeyInputBuffer << std::endl;
         #endif
 
-        // TODO: Add entries to JSON file
+        if (nameInputBuffer[0] && channelInputBuffer[0] && apiKeyInputBuffer[0])
+        {
+            // Add to running instance of HomeMonitor
+            HomeMonitor_t homeMonitor;
 
-        memset(channelInputBuffer, 0, sizeof(channelInputBuffer));
-        memset(apiKeyInputBuffer, 0, sizeof(apiKeyInputBuffer));
+            homeMonitor.thingSpeak = { nameInputBuffer,
+                                       channelInputBuffer,
+                                       apiKeyInputBuffer   };
+
+            if (!HomeMonitorSetColor(homeMonitor))
+            {
+                std::cerr << "ERROR!!" << std::endl;
+                assert(!"TODO: Prevent addition and add pop-up to notify user");
+            }
+
+            homeMonitors.push_back(homeMonitor);
+
+            homeMonitor.thingSpeak.GetFieldData();
+
+            // Store in file for future use
+            std::ifstream inputFile(thingSpeakFilePath);
+            if (!inputFile.is_open())
+            {
+                std::cerr << "Could not open " << thingSpeakFilePath << std::endl;
+                assert(!"Could not open ThingSpeak object JSON file");
+            }
+
+            json thingSpeakObjectsJson;
+            inputFile >> thingSpeakObjectsJson;
+
+            inputFile.close();
+
+            thingSpeakObjectsJson.push_back({
+                {"name", nameInputBuffer},
+                {"channel", channelInputBuffer},
+                {"key", apiKeyInputBuffer}
+            });
+
+            std::ofstream outputFile(thingSpeakFilePath);
+            outputFile << thingSpeakObjectsJson.dump(4);
+            outputFile.close();
+
+            memset(nameInputBuffer, 0, sizeof(nameInputBuffer));
+            memset(channelInputBuffer, 0, sizeof(channelInputBuffer));
+            memset(apiKeyInputBuffer, 0, sizeof(apiKeyInputBuffer));
+        }
     }
 
     ImGui::End();   // General Controls
-}
-
-/**
- * @brief Create temperature graph HomeMonitor GUI
- * 
- * @param homeMonitors - Collection of HomeMonitor objects to render
- */
-void HomeMonitorCreateTemperatureViewerWindow(std::vector<HomeMonitor_t>& homeMonitors)
-{
-    ImVec2 maxWindowSize(-1, -1);
-
-    ImGui::Begin("Temperature Viewer");
-
-    ImPlot::PushStyleVar(ImPlotStyleVar_LineWeight, 2.5f);
-    if (ImPlot::BeginPlot("Temperature", maxWindowSize), ImPlotFlags_NoInputs)
-    {
-        ImPlot::SetupAxes("Entry Number", "Temperature (Fahrenheit)");
-
-        for (auto& homeMonitor : homeMonitors)
-        {
-            if (homeMonitor.displayData)
-            {
-                auto xAxisDataArray = homeMonitor.thingSpeak.GetTemperature()->xAxisData;
-                auto yAxisDataArray = homeMonitor.thingSpeak.GetTemperature()->yAxisData;
-
-                ImPlot::PushStyleColor(0, homeMonitor.assignedColor.assignedColorRgb);
-                ImPlot::PlotLine(homeMonitor.thingSpeak.GetName().c_str(),
-                                xAxisDataArray,
-                                yAxisDataArray,
-                                homeMonitor.thingSpeak.GetTemperature()->numDataPoints,
-                                ImPlotLegendFlags_NoButtons);
-                ImPlot::PopStyleColor();
-            }
-        }
-
-        if (ImPlot::IsPlotHovered())
-        {
-            HomeMonitorDrawVerticalCursor();
-
-            std::pair<int, int> closestIndicies =
-                HomeMonitorGetClosestPointToMouse(ThingSpeakField::Temperature, homeMonitors);
-
-            if (closestIndicies.first != -1)
-            {
-                auto homeMonitor = homeMonitors[closestIndicies.first];
-                auto dataset = homeMonitor.thingSpeak.GetTemperature();
-                auto entryId = closestIndicies.second;
-
-                ImGui::BeginTooltip();
-                ImGui::Text("Trendline: %s", homeMonitor.thingSpeak.GetName().c_str());
-                ImGui::Text("Entry ID: %d", entryId);
-                ImGui::Text("Temperature: %.2f", dataset->yAxisData[entryId]);
-                ImGui::Text("Date/Time Captured (PST): %s", dataset->timestamp[entryId].c_str());
-                ImGui::EndTooltip();
-            }
-        }
-
-        ImPlot::EndPlot();
-    }
-    ImPlot::PopStyleVar();
-    ImGui::End();
 }
 
 /**
@@ -646,36 +641,51 @@ void HomeMonitorCreateThingSpeakViewerWindow(std::string name,
     ImPlot::PushStyleVar(ImPlotStyleVar_LineWeight, 2.5f);
     if (ImPlot::BeginPlot(name.c_str(), maxWindowSize), ImPlotFlags_NoInputs)
     {
-        std::pair<float, float> yLimits =
-            HomeMonitorGetYAxisBoundaries(field, homeMonitors);
-
         ImPlot::SetupAxes(xAxisLabel.c_str(), yAxisLabel.c_str());
-        ImPlot::SetupAxisLimitsConstraints(ImAxis_X1, 0, (MAX_THINGSPEAK_REQUEST_SIZE - 1));
-        ImPlot::SetupAxisLimitsConstraints(ImAxis_Y1,
-                                           yLimits.first - 0.5,
-                                           yLimits.second + 0.5);
+
+        std::vector<HomeMonitor_t> visibleHomeMonitors;
+        for (auto& homeMonitor : homeMonitors)
+        {
+            if (homeMonitor.displayData && homeMonitor.thingSpeak.ValidData())
+            {
+                visibleHomeMonitors.push_back(homeMonitor);
+            }
+        }
+
+        if (visibleHomeMonitors.size() > 0)
+        {
+            // Do not specify axis limits if no plots are visible.
+            // Otherwise, Imgui will not be able to redisplay data when enabled
+            float const margin = 0.5;
+            std::pair<float, float> xLimits = {0, (MAX_THINGSPEAK_REQUEST_SIZE - 1)};
+            std::pair<float, float> yLimits = HomeMonitorGetYAxisBoundaries(field, homeMonitors);
+
+            ImPlot::SetupAxisLimitsConstraints(ImAxis_X1,
+                                               xLimits.first,
+                                               xLimits.second);
+            ImPlot::SetupAxisLimitsConstraints(ImAxis_Y1,
+                                               yLimits.first - margin,
+                                               yLimits.second + margin);
+        }
 
         ThingSpeakFeedData_t const * dataset;
 
-        for (auto& homeMonitor : homeMonitors)
+        for (auto& homeMonitor : visibleHomeMonitors)
         {
-            if (homeMonitor.displayData)
+            if (field == ThingSpeakField::Temperature)
             {
-                if (field == ThingSpeakField::Temperature)
-                {
-                    dataset = homeMonitor.thingSpeak.GetTemperature();
-                }
-                else
-                {
-                    dataset = homeMonitor.thingSpeak.GetHumidity();
-                }
-
-                ImPlot::PushStyleColor(0, homeMonitor.assignedColor.assignedColorRgb);
-                ImPlot::PlotLine(homeMonitor.thingSpeak.GetName().c_str(),
-                                dataset->xAxisData, dataset->yAxisData,
-                                dataset->numDataPoints, ImPlotLegendFlags_NoButtons);
-                ImPlot::PopStyleColor();
+                dataset = homeMonitor.thingSpeak.GetTemperature();
             }
+            else
+            {
+                dataset = homeMonitor.thingSpeak.GetHumidity();
+            }
+
+            ImPlot::PushStyleColor(0, homeMonitor.assignedColor.assignedColorRgb);
+            ImPlot::PlotLine(homeMonitor.thingSpeak.GetName().c_str(),
+                             dataset->xAxisData, dataset->yAxisData,
+                             dataset->numDataPoints,ImPlotLegendFlags_NoButtons);
+            ImPlot::PopStyleColor();
         }
 
         if (ImPlot::IsPlotHovered())
@@ -683,11 +693,11 @@ void HomeMonitorCreateThingSpeakViewerWindow(std::string name,
             HomeMonitorDrawVerticalCursor();
 
             std::pair<int, int> closestIndicies =
-                HomeMonitorGetClosestPointToMouse(field, homeMonitors);
+                HomeMonitorGetClosestPointToMouse(field, visibleHomeMonitors);
 
             if (closestIndicies.first != -1)
             {
-                auto homeMonitor = homeMonitors[closestIndicies.first];
+                auto homeMonitor = visibleHomeMonitors[closestIndicies.first];
                 auto entryId = closestIndicies.second;
 
                 if (field == ThingSpeakField::Temperature)
@@ -735,8 +745,6 @@ bool HomeMonitorSetColor(HomeMonitor_t& homeMonitor)
         // Yellow
         {IM_COL32(237, 177,  32, 255), ImVec4(0.929f, 0.694f, 0.125f, 1.0f), true},
     };
-
-    uint16_t const maxRgbValue = 255;
 
     bool colorSelected = false;
 
@@ -826,12 +834,6 @@ std::pair<int, int> HomeMonitorGetClosestPointToMouse(ThingSpeakField field,
 
     for (int i = 0; i < homeMonitors.size(); i++)
     {
-        if (!homeMonitors[i].displayData)
-        {
-            // Data is not visible to user, and should not be considered
-            continue;
-        }
-
         if (field == ThingSpeakField::Temperature)
         {
             dataset = homeMonitors[i].thingSpeak.GetTemperature();
@@ -871,7 +873,7 @@ std::pair<int, int> HomeMonitorGetClosestPointToMouse(ThingSpeakField field,
  * @return std::pair<float, float> - Min, Max Y-Axis boundaries
  */
 std::pair<float, float> HomeMonitorGetYAxisBoundaries(ThingSpeakField field,
-                                                  std::vector<HomeMonitor_t>& homeMonitors)
+                                                      std::vector<HomeMonitor_t>& homeMonitors)
 {
     float yMin = FLT_MAX;
     float yMax = FLT_MIN;
@@ -880,17 +882,17 @@ std::pair<float, float> HomeMonitorGetYAxisBoundaries(ThingSpeakField field,
 
     for (auto& homeMonitor : homeMonitors)
     {
-        if (field == ThingSpeakField::Temperature)
-        {
-            dataset = homeMonitor.thingSpeak.GetTemperature();
-        }
-        else
-        {
-            dataset = homeMonitor.thingSpeak.GetHumidity();
-        }
-
         if (homeMonitor.displayData)
         {
+            if (field == ThingSpeakField::Temperature)
+            {
+                dataset = homeMonitor.thingSpeak.GetTemperature();
+            }
+            else
+            {
+                dataset = homeMonitor.thingSpeak.GetHumidity();
+            }
+
             for (int i = 0; i < dataset->numDataPoints; i++)
             {
                 yMin = std::min(dataset->yAxisData[i], yMin);

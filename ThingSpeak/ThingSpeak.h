@@ -44,6 +44,7 @@ public:
     std::string const GetName();
     ThingSpeakFeedData_t const * const GetTemperature();
     ThingSpeakFeedData_t const * const GetHumidity();
+    bool const ValidData();
 
 private:
     // Member Variables
@@ -51,6 +52,7 @@ private:
 	std::string thingSpeakKey;
 	std::string thingSpeakChannel;
 
+    bool validDataFetched;
     ThingSpeakFeedData_t temperatureData;
     ThingSpeakFeedData_t humidityData;
 
