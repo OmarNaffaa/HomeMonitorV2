@@ -357,12 +357,12 @@ int main(int argc, char** argv)
         }
 
         // Create Homemonitor plotting windows
-        HomeMonitorCreateThingSpeakViewerWindow("Temperature",
-                                                "Entry ID", "Temperature (Fahrenheit)",
-                                                ThingSpeakField::Temperature, homeMonitors);
         HomeMonitorCreateThingSpeakViewerWindow("Humidity",
                                                 "Entry ID", "Relative Humidity (%)",
                                                 ThingSpeakField::Humidity, homeMonitors);
+        HomeMonitorCreateThingSpeakViewerWindow("Temperature",
+                                                "Entry ID", "Temperature (Fahrenheit)",
+                                                ThingSpeakField::Temperature, homeMonitors);
 
         // Rendering
         ImGui::Render();
@@ -639,7 +639,7 @@ void HomeMonitorCreateThingSpeakViewerWindow(std::string name,
     ImGui::Begin(windowName.c_str());
 
     ImPlot::PushStyleVar(ImPlotStyleVar_LineWeight, 2.5f);
-    if (ImPlot::BeginPlot(name.c_str(), maxWindowSize), ImPlotFlags_NoInputs)
+    if (ImPlot::BeginPlot(name.c_str(), maxWindowSize))
     {
         ImPlot::SetupAxes(xAxisLabel.c_str(), yAxisLabel.c_str());
 
@@ -715,6 +715,13 @@ void HomeMonitorCreateThingSpeakViewerWindow(std::string name,
                 ImGui::Text("%s: %.2f", name.c_str(), dataset->yAxisData[entryId]);
                 ImGui::Text("Date/Time Captured (PST): %s", dataset->timestamp[entryId].c_str());
                 ImGui::EndTooltip();
+
+                float xPoint[] = {static_cast<float>(entryId)};
+                float yPoint[] = {dataset->yAxisData[entryId]};
+                ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(1.0, 0.0, 0.0, 1.0));
+                ImPlot::PlotScatter("Closest Point", xPoint, yPoint,
+                                    IM_ARRAYSIZE(xPoint), ImPlotLegendFlags_NoButtons);
+                ImPlot::PopStyleColor();
             }
         }
 
@@ -776,15 +783,18 @@ bool HomeMonitorSetColor(HomeMonitor_t& homeMonitor)
  */
 void HomeMonitorDrawVerticalCursor()
 {
-    ImDrawList* draw_list = ImPlot::GetPlotDrawList();
-    ImPlotPoint mouse   = ImPlot::GetPlotMousePos();
-    mouse.x             = std::round(mouse.x);
-    float  tool_l       = ImPlot::PlotToPixels(mouse.x - 0.25 * 1.5, mouse.y).x;
-    float  tool_r       = ImPlot::PlotToPixels(mouse.x + 0.25 * 1.5, mouse.y).x;
-    float  tool_t       = ImPlot::GetPlotPos().y;
-    float  tool_b       = tool_t + ImPlot::GetPlotSize().y;
+    ImDrawList* drawList = ImPlot::GetPlotDrawList();
+    ImPlotPoint mouse    = ImPlot::GetPlotMousePos();
+    mouse.x              = std::round(mouse.x);
+    float  rectLeft      = ImPlot::PlotToPixels(mouse.x - 0.25 * 1.5, mouse.y).x;
+    float  rectRight     = ImPlot::PlotToPixels(mouse.x + 0.25 * 1.5, mouse.y).x;
+    float  rectTop       = ImPlot::GetPlotPos().y;
+    float  rectBottom    = rectTop + ImPlot::GetPlotSize().y;
+
     ImPlot::PushPlotClipRect();
-    draw_list->AddRectFilled(ImVec2(tool_l, tool_t), ImVec2(tool_r, tool_b), IM_COL32(255,0,0,32));
+    drawList->AddRectFilled(ImVec2(rectLeft, rectTop),
+                            ImVec2(rectRight, rectBottom),
+                            IM_COL32(255, 0, 0, 32));
     ImPlot::PopPlotClipRect();
 }
 
@@ -800,10 +810,10 @@ void HomeMonitorDrawHorizontalLine()
 
     ImGui::Dummy(ImVec2(0.0f, spacing));
 
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
     ImVec2 start = ImGui::GetCursorScreenPos();
     ImVec2 end = ImVec2((start.x + ImGui::GetWindowWidth() - margin), start.y);
-    draw_list->AddLine(start, end, IM_COL32(128, 128, 128, 60), 0.5f);
+    drawList->AddLine(start, end, IM_COL32(128, 128, 128, 60), 0.5f);
 
     ImGui::Dummy(ImVec2(0.0f, spacing));
 }
