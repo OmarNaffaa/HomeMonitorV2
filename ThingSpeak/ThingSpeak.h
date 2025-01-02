@@ -13,6 +13,12 @@ using json = nlohmann::json;
 
 #define MAX_THINGSPEAK_REQUEST_SIZE   100
 
+enum class ThingSpeakField
+{
+    Temperature = 1,
+    Humidity
+};
+
 typedef std::map<std::string, std::string> thingSpeakEntry;
 
 typedef struct

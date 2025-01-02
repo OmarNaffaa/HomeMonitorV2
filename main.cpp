@@ -2,6 +2,8 @@
 //
 // [2024/12/23]
 
+#define NOMINMAX    // Needed to avoid Windows.h version of min/max being used
+
 #include <d3d12.h>
 #include <dxgi1_4.h>
 #include <dwmapi.h>
@@ -9,6 +11,8 @@
 #include <string>
 #include <fstream>
 #include <filesystem>
+#include <algorithm>
+#include <ranges>
 
 #include "Imgui/imgui.h"
 #include "Imgui/imgui_impl_win32.h"
@@ -122,8 +126,8 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg,
                                                              WPARAM wParam, LPARAM lParam);
 
-void ImplotStyleSeabornLight();
-void ImplotStyleSeabornDark();
+// Win32 API - Declarations
+void Win32RegisterAndCreateWindow(HWND& hwnd, WNDCLASSEXW& windowClass);
 
 // HomeMonitor Global Definitions
 typedef struct
@@ -157,48 +161,24 @@ void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& home
 void HomeMonitorCreateTemperatureViewerWindow(std::vector<HomeMonitor_t>& homeMonitors);
 void HomeMonitorCreateHumidityViewerWindow(std::vector<HomeMonitor_t>& homeMonitors);
 
-// HomeMonitor Graph Helper Functions
+// HomeMonitor Graph Functions
+void HomeMonitorGraphStyleLight();
+void HomeMonitorGraphStyleDark();
+
 bool HomeMonitorSetColor(HomeMonitor_t& homeMonitor);
 void HomeMonitorDrawVerticalCursor();
 void HomeMonitorDrawHorizontalLine();
 
+std::pair<int, int> HomeMonitorGetClosestPointToMouse(ThingSpeakField field,
+                                                      std::vector<HomeMonitor_t>& homeMonitors);
+std::pair<int, int> HomeMonitorGetYAxisBoundaries(ThingSpeakField field,
+                                                  std::vector<HomeMonitor_t>& homeMonitors);
+
 int main(int argc, char** argv)
 {
-    // Define application window
-    HICON hIcon = static_cast<HICON>(::LoadImage(
-        GetModuleHandle(nullptr),
-        MAKEINTRESOURCE(IDI_ICON),
-        IMAGE_ICON,
-        0, 0,
-        LR_DEFAULTCOLOR
-    ));
-
-    WNDCLASSEXW windowClass = {
-        sizeof(WNDCLASSEXW),        // Size of struct
-        CS_CLASSDC,                 // Allocate one shared device context
-        WndProc,                    // Pointer to window procedure
-        0L, 0L,                     // Do not allocate any extra bytes
-        GetModuleHandle(nullptr),   // No handle neded
-        hIcon,                      // Use custom icon
-        nullptr,                    // Manually set cursor shape
-        nullptr,                    // Manually paint background
-        nullptr,                    // No default menu
-        L"HomeMonitor",             // Window name
-        hIcon                       // Use custom small icon
-    };
-    ::RegisterClassExW(&windowClass);
-
-    // Create application window using attributes defined above
-    HWND hwnd = ::CreateWindowW(windowClass.lpszClassName,
-                                L"HomeMonitor",
-                                WS_OVERLAPPEDWINDOW,
-                                100, 100,
-                                CW_USEDEFAULT, CW_USEDEFAULT,
-                                nullptr,
-                                nullptr,
-                                windowClass.hInstance,
-                                nullptr
-    );
+    HWND hwnd;
+    WNDCLASSEXW windowClass;
+    Win32RegisterAndCreateWindow(hwnd, windowClass);
 
     // Initialize Direct3D
     if (!CreateDeviceD3D(hwnd))
@@ -229,13 +209,13 @@ int main(int argc, char** argv)
     if (darkMode)
     {
         ImGui::StyleColorsDark();
-        ImplotStyleSeabornDark();
+        HomeMonitorGraphStyleDark();
         clearColor = ImVec4(0.2f, 0.2f, 0.2f, 1.00f);
     }
     else
     {
         ImGui::StyleColorsLight();
-        ImplotStyleSeabornLight();
+        HomeMonitorGraphStyleLight();
         clearColor = ImVec4(0.8f, 0.8f, 0.8f, 1.00f);
     }
     darkMode = !darkMode;
@@ -318,7 +298,9 @@ int main(int argc, char** argv)
     while (!done)
     {
         // Poll and handle messages (inputs, window resize, etc.)
-        // See the WndProc() function below for our to dispatch events to the Win32 backend.
+        // 
+        // See the WndProc() function below for for procedure to
+        // dispatch events to the Win32 backend.
         MSG msg;
         while (::PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE))
         {
@@ -351,8 +333,8 @@ int main(int argc, char** argv)
         // Create docking space
         ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
 
+        // Create HomeMonitor control windows
         HomeMonitorCreateViewerPropertiesWindow(homeMonitors);
-
         HomeMonitorCreateAddThingSpeakObjectWindow(homeMonitors);
 
         // Refresh data periodically
@@ -466,12 +448,12 @@ void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMon
         if (darkMode)
         {
             ImGui::StyleColorsDark();
-            ImplotStyleSeabornDark();
+            HomeMonitorGraphStyleDark();
         }
         else
         {
             ImGui::StyleColorsLight();
-            ImplotStyleSeabornLight();
+            HomeMonitorGraphStyleLight();
         }
         darkMode = !darkMode;
     }
@@ -588,52 +570,43 @@ void HomeMonitorCreateTemperatureViewerWindow(std::vector<HomeMonitor_t>& homeMo
     if (ImPlot::BeginPlot("Temperature", maxWindowSize), ImPlotFlags_NoInputs)
     {
         ImPlot::SetupAxes("Entry Number", "Temperature (Fahrenheit)");
-        if (homeMonitors[0].displayData)
+
+        for (auto& homeMonitor : homeMonitors)
         {
-            auto xAxisDataArray = homeMonitors[0].thingSpeak.GetTemperature()->xAxisData;
-            auto yAxisDataArray = homeMonitors[0].thingSpeak.GetTemperature()->yAxisData;
-
-            ImPlot::PushStyleColor(0, homeMonitors[0].assignedColor.assignedColorRgb);
-            ImPlot::PlotLine(homeMonitors[0].thingSpeak.GetName().c_str(),
-                             xAxisDataArray,
-                             yAxisDataArray,
-                             homeMonitors[0].thingSpeak.GetTemperature()->numDataPoints,
-                             ImPlotLegendFlags_NoButtons);
-            ImPlot::PopStyleColor();
-
-            if (ImPlot::IsPlotHovered())
+            if (homeMonitor.displayData)
             {
-                ImPlotPoint mousePos = ImPlot::GetPlotMousePos();
+                auto xAxisDataArray = homeMonitor.thingSpeak.GetTemperature()->xAxisData;
+                auto yAxisDataArray = homeMonitor.thingSpeak.GetTemperature()->yAxisData;
 
-                HomeMonitorDrawVerticalCursor();
+                ImPlot::PushStyleColor(0, homeMonitor.assignedColor.assignedColorRgb);
+                ImPlot::PlotLine(homeMonitor.thingSpeak.GetName().c_str(),
+                                xAxisDataArray,
+                                yAxisDataArray,
+                                homeMonitor.thingSpeak.GetTemperature()->numDataPoints,
+                                ImPlotLegendFlags_NoButtons);
+                ImPlot::PopStyleColor();
+            }
+        }
 
-                // Find the closest data point
-                float minDist = FLT_MAX;
-                int closestIndex = -1;
+        if (ImPlot::IsPlotHovered())
+        {
+            HomeMonitorDrawVerticalCursor();
 
-                for (int i = 0; i < homeMonitors[0].thingSpeak.GetTemperature()->numDataPoints; i++) {
-                    float dist = std::sqrt(std::pow(mousePos.x - xAxisDataArray[i], 2)
-                                + std::pow(mousePos.y - yAxisDataArray[i], 2));
-                    if (dist < minDist) {
-                        minDist = dist;
-                        closestIndex = i;
-                    }
-                }
+            std::pair<int, int> closestIndicies =
+                HomeMonitorGetClosestPointToMouse(ThingSpeakField::Temperature, homeMonitors);
 
-                // TODO: Search through all points that are checked
+            if (closestIndicies.first != -1)
+            {
+                auto homeMonitor = homeMonitors[closestIndicies.first];
+                auto dataset = homeMonitor.thingSpeak.GetTemperature();
+                auto entryId = closestIndicies.second;
 
-                // Display the closest data point
-                if (closestIndex != -1) {
-                    ImGui::BeginTooltip();
-                    ImGui::Text("Entry ID (local): %d", closestIndex);
-                    ImGui::Text("Value: %.2f",
-                                yAxisDataArray[closestIndex]);
-                    ImGui::Text("Date/Time Captured (PST): %s",
-                                homeMonitors[0].thingSpeak.GetTemperature()->timestamp[closestIndex].c_str());
-                    ImGui::Text("Entry ID (ThingSpeak): %d",
-                                homeMonitors[0].thingSpeak.GetTemperature()->entryId[closestIndex]);
-                    ImGui::EndTooltip();
-                }
+                ImGui::BeginTooltip();
+                ImGui::Text("Trendline: %s", homeMonitor.thingSpeak.GetName().c_str());
+                ImGui::Text("Entry ID: %d", entryId);
+                ImGui::Text("Temperature: %.2f", dataset->yAxisData[entryId]);
+                ImGui::Text("Date/Time Captured (PST): %s", dataset->timestamp[entryId].c_str());
+                ImGui::EndTooltip();
             }
         }
 
@@ -657,59 +630,51 @@ void HomeMonitorCreateHumidityViewerWindow(std::vector<HomeMonitor_t>& homeMonit
     ImPlot::PushStyleVar(ImPlotStyleVar_LineWeight, 2.5f);
     if (ImPlot::BeginPlot("Humidity", maxWindowSize), ImPlotFlags_NoInputs)
     {
-        ImPlot::SetupAxes("Entry Number", "Relative Humidity (%)");
-        if (homeMonitors[0].displayData)
+        std::pair<int, int> yLimits =
+            HomeMonitorGetYAxisBoundaries(ThingSpeakField::Humidity, homeMonitors);
+
+        ImPlot::SetupAxes("Entry Number", "Humidity (Fahrenheit)");
+        ImPlot::SetupAxisLimitsConstraints(ImAxis_X1, 0, 99);
+        ImPlot::SetupAxisLimitsConstraints(ImAxis_Y1, yLimits.first, yLimits.second);
+
+        for (auto& homeMonitor : homeMonitors)
         {
-            auto xAxisDataArray = homeMonitors[0].thingSpeak.GetHumidity()->xAxisData;
-            auto yAxisDataArray = homeMonitors[0].thingSpeak.GetHumidity()->yAxisData;
-
-            ImPlot::PushStyleColor(0, homeMonitors[0].assignedColor.assignedColorRgb);
-            ImPlot::PlotLine(homeMonitors[0].thingSpeak.GetName().c_str(),
-                             xAxisDataArray,
-                             yAxisDataArray,
-                             homeMonitors[0].thingSpeak.GetHumidity()->numDataPoints,
-                             ImPlotLegendFlags_NoButtons);
-            ImPlot::PopStyleColor();
-
-            if (ImPlot::IsPlotHovered())
+            if (homeMonitor.displayData)
             {
-                ImPlotPoint mousePos = ImPlot::GetPlotMousePos();
-                
-                HomeMonitorDrawVerticalCursor();
+                auto dataset = homeMonitor.thingSpeak.GetHumidity();
 
-                // Find the closest data point
-                float minDist = FLT_MAX;
-                int closestIndex = -1;
+                ImPlot::PushStyleColor(0, homeMonitor.assignedColor.assignedColorRgb);
+                ImPlot::PlotLine(homeMonitor.thingSpeak.GetName().c_str(),
+                                dataset->xAxisData, dataset->yAxisData,
+                                dataset->numDataPoints, ImPlotLegendFlags_NoButtons);
+                ImPlot::PopStyleColor();
+            }
+        }
 
-                for (int i = 0; i < homeMonitors[0].thingSpeak.GetHumidity()->numDataPoints; i++) {
-                    float dist = std::sqrt(std::pow(mousePos.x - xAxisDataArray[i], 2)
-                                + std::pow(mousePos.y - yAxisDataArray[i], 2));
-                    if (dist < minDist) {
-                        minDist = dist;
-                        closestIndex = i;
-                    }
-                }
+        if (ImPlot::IsPlotHovered())
+        {
+            HomeMonitorDrawVerticalCursor();
 
-                // TODO: Search through all points that are checked
+            std::pair<int, int> closestIndicies =
+                HomeMonitorGetClosestPointToMouse(ThingSpeakField::Humidity, homeMonitors);
 
-                // Display the closest data point
-                if (closestIndex != -1) {
-                    ImGui::BeginTooltip();
-                    ImGui::Text("Entry ID (local): %d", closestIndex);
-                    ImGui::Text("Humidity: %.2f",
-                                yAxisDataArray[closestIndex]);
-                    ImGui::Text("Date/Time Captured (PST): %s",
-                                homeMonitors[0].thingSpeak.GetHumidity()->timestamp[closestIndex].c_str());
-                    ImGui::Text("Entry ID (ThingSpeak): %d",
-                                homeMonitors[0].thingSpeak.GetHumidity()->entryId[closestIndex]);
-                    ImGui::EndTooltip();
-                }
+            if (closestIndicies.first != -1)
+            {
+                auto homeMonitor = homeMonitors[closestIndicies.first];
+                auto dataset = homeMonitor.thingSpeak.GetHumidity();
+                auto entryId = closestIndicies.second;
+
+                ImGui::BeginTooltip();
+                ImGui::Text("Trendline: %s", homeMonitor.thingSpeak.GetName().c_str());
+                ImGui::Text("Entry ID: %d", entryId);
+                ImGui::Text("Humidity: %.2f", dataset->yAxisData[entryId]);
+                ImGui::Text("Date/Time Captured (PST): %s", dataset->timestamp[entryId].c_str());
+                ImGui::EndTooltip();
             }
         }
 
         ImPlot::EndPlot();
     }
-
     ImPlot::PopStyleVar();
     ImGui::End();
 }
@@ -798,6 +763,153 @@ void HomeMonitorDrawHorizontalLine()
     draw_list->AddLine(start, end, IM_COL32(128, 128, 128, 60), 0.5f);
 
     ImGui::Dummy(ImVec2(0.0f, spacing));
+}
+
+/**
+ * @brief Determine the closest point to the cursor from the set of points
+ *        currently marked visible in the graph
+ * 
+ * @param homeMonitors - Collection of HomeMonitor objects to traverse
+ * @param field - Type of field data to search
+ * @return std::pair<int, int> - Pair containing:
+ *                               (1) The HomeMonitor object with the nearest point,
+ *                               (2) The index of the closest point from the
+ *                                   points stored in the HomeMonitor object
+ *                               Or a negative pair {-1, -1} if not point exists
+ */
+std::pair<int, int> HomeMonitorGetClosestPointToMouse(ThingSpeakField field,
+                                                      std::vector<HomeMonitor_t>& homeMonitors)
+{
+    int xDistanceRounded;
+    float yDistance;
+    float yMinDistance = FLT_MAX;
+
+    std::pair<int, int> closestValue = {-1, -1};
+    ThingSpeakFeedData_t const * dataset;
+
+    ImPlotPoint mousePos = ImPlot::GetPlotMousePos();
+
+    for (int i = 0; i < homeMonitors.size(); i++)
+    {
+        if (!homeMonitors[i].displayData)
+        {
+            // Data is not visible to user, and should not be considered
+            continue;
+        }
+
+        if (field == ThingSpeakField::Temperature)
+        {
+            dataset = homeMonitors[i].thingSpeak.GetTemperature();
+        }
+        else
+        {
+            dataset = homeMonitors[i].thingSpeak.GetHumidity();
+        }
+
+        for (int j = 0; j < dataset->numDataPoints; j++)
+        {
+            xDistanceRounded = std::abs(std::round(mousePos.x - dataset->xAxisData[j]));
+            if (xDistanceRounded != 0)
+            {
+                // Data point is not in the same column as cursor
+                continue;
+            }
+
+            yDistance = std::abs(mousePos.y - dataset->yAxisData[j]);
+            if (yDistance < yMinDistance)
+            {
+                closestValue.first = i;
+                closestValue.second = j;
+
+                yMinDistance = yDistance;
+            }
+        }
+    }
+
+    return closestValue;
+}
+
+/**
+ * @brief Determine upper and lower Y-axis (vertical) boundaries based on
+ *        visible data
+ * 
+ * @return std::pair<int, int> 
+ */
+std::pair<int, int> HomeMonitorGetYAxisBoundaries(ThingSpeakField field,
+                                                  std::vector<HomeMonitor_t>& homeMonitors)
+{
+    float yMin = FLT_MAX;
+    float yMax = FLT_MIN;
+
+    ThingSpeakFeedData_t const * dataset;
+
+    for (auto& homeMonitor : homeMonitors)
+    {
+        if (field == ThingSpeakField::Temperature)
+        {
+            dataset = homeMonitor.thingSpeak.GetHumidity();
+        }
+        else
+        {
+            dataset = homeMonitor.thingSpeak.GetHumidity();
+        }
+
+        if (homeMonitor.displayData)
+        {
+            for (int i = 0; i < dataset->numDataPoints; i++)
+            {
+                yMin = std::min(dataset->yAxisData[i], yMin);
+                yMax = std::max(dataset->yAxisData[i], yMax);
+            }
+        }
+    }
+
+    return {yMin, yMax};
+}
+
+/**
+ * @brief Define, register, and instantiate Win32 window instance with icon
+ * 
+ * @param hwnd - ID of created window
+ * @param windowClass - Window Class object (i.e. window attributes)
+ */
+void Win32RegisterAndCreateWindow(HWND& hwnd, WNDCLASSEXW& windowClass)
+{
+    // Define application window
+    HICON hIcon = static_cast<HICON>(::LoadImage(
+        GetModuleHandle(nullptr),
+        MAKEINTRESOURCE(IDI_ICON),
+        IMAGE_ICON,
+        0, 0,
+        LR_DEFAULTCOLOR
+    ));
+
+    windowClass = {
+        sizeof(WNDCLASSEXW),        // Size of struct
+        CS_CLASSDC,                 // Allocate one shared device context
+        WndProc,                    // Pointer to window procedure
+        0L, 0L,                     // Do not allocate any extra bytes
+        GetModuleHandle(nullptr),   // No handle neded
+        hIcon,                      // Use custom icon
+        nullptr,                    // Manually set cursor shape
+        nullptr,                    // Manually paint background
+        nullptr,                    // No default menu
+        L"HomeMonitor",             // Window name
+        hIcon                       // Use custom small icon
+    };
+    ::RegisterClassExW(&windowClass);
+
+    // Create application window using attributes defined above
+    hwnd = ::CreateWindowW(windowClass.lpszClassName,
+                           L"HomeMonitor",
+                           WS_OVERLAPPEDWINDOW,
+                           100, 100,
+                           CW_USEDEFAULT, CW_USEDEFAULT,
+                           nullptr,
+                           nullptr,
+                           windowClass.hInstance,
+                           nullptr
+    );
 }
 
 /**
@@ -1124,7 +1236,7 @@ FrameContext* WaitForNextFrameResources()
 }
 
 /* ImPlot Graph Styles */
-void ImplotStyleSeabornLight()
+void HomeMonitorGraphStyleLight()
 {
     ImPlotStyle& style              = ImPlot::GetStyle();
 
@@ -1173,7 +1285,7 @@ void ImplotStyleSeabornLight()
     style.PlotMinSize      = ImVec2(300,225);
 }
 
-void ImplotStyleSeabornDark()
+void HomeMonitorGraphStyleDark()
 {
     ImPlotStyle& style = ImPlot::GetStyle();
 
