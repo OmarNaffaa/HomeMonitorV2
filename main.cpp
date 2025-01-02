@@ -158,8 +158,11 @@ bool darkMode = false;
 // HomeMonitor Window Creation
 void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMonitors);
 void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& homeMonitors);
-void HomeMonitorCreateTemperatureViewerWindow(std::vector<HomeMonitor_t>& homeMonitors);
-void HomeMonitorCreateHumidityViewerWindow(std::vector<HomeMonitor_t>& homeMonitors);
+void HomeMonitorCreateThingSpeakViewerWindow(std::string name,
+                                             std::string xAxisLabel,
+                                             std::string yAxisLabel,
+                                             ThingSpeakField field,
+                                             std::vector<HomeMonitor_t>& homeMonitors);
 
 // HomeMonitor Graph Functions
 void HomeMonitorGraphStyleLight();
@@ -171,8 +174,8 @@ void HomeMonitorDrawHorizontalLine();
 
 std::pair<int, int> HomeMonitorGetClosestPointToMouse(ThingSpeakField field,
                                                       std::vector<HomeMonitor_t>& homeMonitors);
-std::pair<int, int> HomeMonitorGetYAxisBoundaries(ThingSpeakField field,
-                                                  std::vector<HomeMonitor_t>& homeMonitors);
+std::pair<float, float> HomeMonitorGetYAxisBoundaries(ThingSpeakField field,
+                                                      std::vector<HomeMonitor_t>& homeMonitors);
 
 int main(int argc, char** argv)
 {
@@ -350,8 +353,12 @@ int main(int argc, char** argv)
         }
 
         // Create Homemonitor plotting windows
-        HomeMonitorCreateTemperatureViewerWindow(homeMonitors);
-        HomeMonitorCreateHumidityViewerWindow(homeMonitors);
+        HomeMonitorCreateThingSpeakViewerWindow("Temperature",
+                                                "Entry ID", "Temperature (Fahrenheit)",
+                                                ThingSpeakField::Temperature, homeMonitors);
+        HomeMonitorCreateThingSpeakViewerWindow("Humidity",
+                                                "Entry ID", "Relative Humidity (%)",
+                                                ThingSpeakField::Humidity, homeMonitors);
 
         // Rendering
         ImGui::Render();
@@ -617,31 +624,51 @@ void HomeMonitorCreateTemperatureViewerWindow(std::vector<HomeMonitor_t>& homeMo
 }
 
 /**
- * @brief Create humidity graph HomeMonitor GUI
+ * @brief Create ThingSpeak graph viewer for HomeMonitor GUI
  * 
+ * @param name - Graph name
+ * @param xAxisLabel - Label to use for X-Axis
+ * @param yAxisLabel - Label to use for Y-Axis
+ * @param field - ThingSpeak field to use
  * @param homeMonitors - Collection of HomeMonitor objects to render
  */
-void HomeMonitorCreateHumidityViewerWindow(std::vector<HomeMonitor_t>& homeMonitors)
+void HomeMonitorCreateThingSpeakViewerWindow(std::string name,
+                                             std::string xAxisLabel,
+                                             std::string yAxisLabel,
+                                             ThingSpeakField field,
+                                             std::vector<HomeMonitor_t>& homeMonitors)
 {
     ImVec2 maxWindowSize(-1, -1);
 
-    ImGui::Begin("Humidity Viewer");
+    std::string windowName(name + " Viewer");
+    ImGui::Begin(windowName.c_str());
 
     ImPlot::PushStyleVar(ImPlotStyleVar_LineWeight, 2.5f);
-    if (ImPlot::BeginPlot("Humidity", maxWindowSize), ImPlotFlags_NoInputs)
+    if (ImPlot::BeginPlot(name.c_str(), maxWindowSize), ImPlotFlags_NoInputs)
     {
-        std::pair<int, int> yLimits =
-            HomeMonitorGetYAxisBoundaries(ThingSpeakField::Humidity, homeMonitors);
+        std::pair<float, float> yLimits =
+            HomeMonitorGetYAxisBoundaries(field, homeMonitors);
 
-        ImPlot::SetupAxes("Entry Number", "Humidity (Fahrenheit)");
-        ImPlot::SetupAxisLimitsConstraints(ImAxis_X1, 0, 99);
-        ImPlot::SetupAxisLimitsConstraints(ImAxis_Y1, yLimits.first, yLimits.second);
+        ImPlot::SetupAxes(xAxisLabel.c_str(), yAxisLabel.c_str());
+        ImPlot::SetupAxisLimitsConstraints(ImAxis_X1, 0, (MAX_THINGSPEAK_REQUEST_SIZE - 1));
+        ImPlot::SetupAxisLimitsConstraints(ImAxis_Y1,
+                                           yLimits.first - 0.5,
+                                           yLimits.second + 0.5);
+
+        ThingSpeakFeedData_t const * dataset;
 
         for (auto& homeMonitor : homeMonitors)
         {
             if (homeMonitor.displayData)
             {
-                auto dataset = homeMonitor.thingSpeak.GetHumidity();
+                if (field == ThingSpeakField::Temperature)
+                {
+                    dataset = homeMonitor.thingSpeak.GetTemperature();
+                }
+                else
+                {
+                    dataset = homeMonitor.thingSpeak.GetHumidity();
+                }
 
                 ImPlot::PushStyleColor(0, homeMonitor.assignedColor.assignedColorRgb);
                 ImPlot::PlotLine(homeMonitor.thingSpeak.GetName().c_str(),
@@ -656,18 +683,26 @@ void HomeMonitorCreateHumidityViewerWindow(std::vector<HomeMonitor_t>& homeMonit
             HomeMonitorDrawVerticalCursor();
 
             std::pair<int, int> closestIndicies =
-                HomeMonitorGetClosestPointToMouse(ThingSpeakField::Humidity, homeMonitors);
+                HomeMonitorGetClosestPointToMouse(field, homeMonitors);
 
             if (closestIndicies.first != -1)
             {
                 auto homeMonitor = homeMonitors[closestIndicies.first];
-                auto dataset = homeMonitor.thingSpeak.GetHumidity();
                 auto entryId = closestIndicies.second;
+
+                if (field == ThingSpeakField::Temperature)
+                {
+                    dataset = homeMonitor.thingSpeak.GetTemperature();
+                }
+                else
+                {
+                    dataset = homeMonitor.thingSpeak.GetHumidity();
+                }
 
                 ImGui::BeginTooltip();
                 ImGui::Text("Trendline: %s", homeMonitor.thingSpeak.GetName().c_str());
                 ImGui::Text("Entry ID: %d", entryId);
-                ImGui::Text("Humidity: %.2f", dataset->yAxisData[entryId]);
+                ImGui::Text("%s: %.2f", name.c_str(), dataset->yAxisData[entryId]);
                 ImGui::Text("Date/Time Captured (PST): %s", dataset->timestamp[entryId].c_str());
                 ImGui::EndTooltip();
             }
@@ -833,9 +868,9 @@ std::pair<int, int> HomeMonitorGetClosestPointToMouse(ThingSpeakField field,
  * @brief Determine upper and lower Y-axis (vertical) boundaries based on
  *        visible data
  * 
- * @return std::pair<int, int> 
+ * @return std::pair<float, float> - Min, Max Y-Axis boundaries
  */
-std::pair<int, int> HomeMonitorGetYAxisBoundaries(ThingSpeakField field,
+std::pair<float, float> HomeMonitorGetYAxisBoundaries(ThingSpeakField field,
                                                   std::vector<HomeMonitor_t>& homeMonitors)
 {
     float yMin = FLT_MAX;
@@ -847,7 +882,7 @@ std::pair<int, int> HomeMonitorGetYAxisBoundaries(ThingSpeakField field,
     {
         if (field == ThingSpeakField::Temperature)
         {
-            dataset = homeMonitor.thingSpeak.GetHumidity();
+            dataset = homeMonitor.thingSpeak.GetTemperature();
         }
         else
         {
