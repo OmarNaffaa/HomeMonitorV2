@@ -20,7 +20,6 @@
 #include "ThingSpeak/ThingSpeak.h"
 
 #define DEBUG_HOMEMONITOR       true
-#define HOMEMONITOR_DARK_MODE   true
 #define HOMEMONITOR_USE_VSYNC   false
 
 #define MAX_HOMEMONITOR_USER_INPUT_SIZE   30
@@ -123,6 +122,9 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg,
                                                              WPARAM wParam, LPARAM lParam);
 
+void ImplotStyleSeabornLight();
+void ImplotStyleSeabornDark();
+
 // HomeMonitor Global Definitions
 typedef struct
 {
@@ -147,7 +149,7 @@ typedef struct
 } HomeMonitor_t;
 
 // HomeMonitor Global Declarations
-bool darkMode = static_cast<bool>(HOMEMONITOR_DARK_MODE);
+bool darkMode = false;
 
 // HomeMonitor Window Creation
 void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMonitors);
@@ -162,8 +164,6 @@ void HomeMonitorDrawHorizontalLine();
 
 int main(int argc, char** argv)
 {
-    ImGui_ImplWin32_EnableDpiAwareness();
-
     // Define application window
     HICON hIcon = static_cast<HICON>(::LoadImage(
         GetModuleHandle(nullptr),
@@ -224,14 +224,21 @@ int main(int argc, char** argv)
 
     ImPlot::CreateContext();
 
-    // Setup Dear ImGui style
-    #if (HOMEMONITOR_DARK_MODE)
-    ImGui::StyleColorsDark();
-    ImVec4 clearColor = ImVec4(0.2f, 0.2f, 0.2f, 1.00f);
-    #else
-    ImGui::StyleColorsLight();
-    ImVec4 clearColor = ImVec4(0.8f, 0.8f, 0.8f, 1.00f);
-    #endif
+    // Setup Dear ImGui initial style
+    ImVec4 clearColor;
+    if (darkMode)
+    {
+        ImGui::StyleColorsDark();
+        ImplotStyleSeabornDark();
+        clearColor = ImVec4(0.2f, 0.2f, 0.2f, 1.00f);
+    }
+    else
+    {
+        ImGui::StyleColorsLight();
+        ImplotStyleSeabornLight();
+        clearColor = ImVec4(0.8f, 0.8f, 0.8f, 1.00f);
+    }
+    darkMode = !darkMode;
 
     // When viewports are enabled we tweak WindowRounding/WindowBg
     // so platform windows can look identical to regular ones.
@@ -456,7 +463,16 @@ void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMon
 
     if (ImGui::Button("Toggle Theme", ImVec2(100, 0)))
     {
-        (darkMode) ? ImGui::StyleColorsLight() : ImGui::StyleColorsDark();
+        if (darkMode)
+        {
+            ImGui::StyleColorsDark();
+            ImplotStyleSeabornDark();
+        }
+        else
+        {
+            ImGui::StyleColorsLight();
+            ImplotStyleSeabornLight();
+        }
         darkMode = !darkMode;
     }
     ImGui::Dummy(ImVec2(0.0f, 5.0f));
@@ -467,6 +483,9 @@ void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMon
     }
 
     HomeMonitorDrawHorizontalLine();
+
+    ImGui::Text("Toggle Plot Visibility");
+    ImGui::Dummy(ImVec2(0.0f, 10.0f));
 
     ImVec4 color;
     if (homeMonitors[0].displayData)
@@ -566,9 +585,9 @@ void HomeMonitorCreateTemperatureViewerWindow(std::vector<HomeMonitor_t>& homeMo
     ImGui::Begin("Temperature Viewer");
 
     ImPlot::PushStyleVar(ImPlotStyleVar_LineWeight, 2.5f);
-    if (ImPlot::BeginPlot("Temperature (Fahrenheit)", maxWindowSize), ImPlotFlags_NoInputs)
+    if (ImPlot::BeginPlot("Temperature", maxWindowSize), ImPlotFlags_NoInputs)
     {
-        ImPlot::SetupAxes("Entry Number", "Temperature");
+        ImPlot::SetupAxes("Entry Number", "Temperature (Fahrenheit)");
         if (homeMonitors[0].displayData)
         {
             auto xAxisDataArray = homeMonitors[0].thingSpeak.GetTemperature()->xAxisData;
@@ -576,10 +595,10 @@ void HomeMonitorCreateTemperatureViewerWindow(std::vector<HomeMonitor_t>& homeMo
 
             ImPlot::PushStyleColor(0, homeMonitors[0].assignedColor.assignedColorRgb);
             ImPlot::PlotLine(homeMonitors[0].thingSpeak.GetName().c_str(),
-                                xAxisDataArray,
-                                yAxisDataArray,
-                                homeMonitors[0].thingSpeak.GetTemperature()->numDataPoints,
-                                ImPlotLegendFlags_NoButtons);
+                             xAxisDataArray,
+                             yAxisDataArray,
+                             homeMonitors[0].thingSpeak.GetTemperature()->numDataPoints,
+                             ImPlotLegendFlags_NoButtons);
             ImPlot::PopStyleColor();
 
             if (ImPlot::IsPlotHovered())
@@ -636,9 +655,9 @@ void HomeMonitorCreateHumidityViewerWindow(std::vector<HomeMonitor_t>& homeMonit
     ImGui::Begin("Humidity Viewer");
 
     ImPlot::PushStyleVar(ImPlotStyleVar_LineWeight, 2.5f);
-    if (ImPlot::BeginPlot(" Relative Humidity (%)", maxWindowSize), ImPlotFlags_NoInputs)
+    if (ImPlot::BeginPlot("Humidity", maxWindowSize), ImPlotFlags_NoInputs)
     {
-        ImPlot::SetupAxes("Entry Number", "Humidity");
+        ImPlot::SetupAxes("Entry Number", "Relative Humidity (%)");
         if (homeMonitors[0].displayData)
         {
             auto xAxisDataArray = homeMonitors[0].thingSpeak.GetHumidity()->xAxisData;
@@ -749,20 +768,23 @@ bool HomeMonitorSetColor(HomeMonitor_t& homeMonitor)
  */
 void HomeMonitorDrawVerticalCursor()
 {
-    unsigned int verticalCursorColor = IM_COL32(255, 0, 0, 255);
-
-    ImPlotPoint mousePos = ImPlot::GetPlotMousePos();
-
-    ImDrawList* drawList = ImGui::GetWindowDrawList();
-
-    ImVec2 plotPos = ImPlot::PlotToPixels(mousePos.x, mousePos.y);
-
-    auto pointOne = ImVec2(plotPos.x, ImPlot::GetPlotPos().y);
-    auto pointTwo = ImVec2(plotPos.x, (ImPlot::GetPlotPos().y + ImPlot::GetPlotSize().y));
-    drawList->AddLine(pointOne, pointTwo, verticalCursorColor, 1.0f);
+    ImDrawList* draw_list = ImPlot::GetPlotDrawList();
+    ImPlotPoint mouse   = ImPlot::GetPlotMousePos();
+    mouse.x             = std::round(mouse.x);
+    float  tool_l       = ImPlot::PlotToPixels(mouse.x - 0.25 * 1.5, mouse.y).x;
+    float  tool_r       = ImPlot::PlotToPixels(mouse.x + 0.25 * 1.5, mouse.y).x;
+    float  tool_t       = ImPlot::GetPlotPos().y;
+    float  tool_b       = tool_t + ImPlot::GetPlotSize().y;
+    ImPlot::PushPlotClipRect();
+    draw_list->AddRectFilled(ImVec2(tool_l, tool_t), ImVec2(tool_r, tool_b), IM_COL32(255,0,0,32));
+    ImPlot::PopPlotClipRect();
 }
 
-
+/**
+ * @brief Draw horizontal line with spacing above/below.
+ *        Used to visually separate sections of GUI
+ * 
+ */
 void HomeMonitorDrawHorizontalLine()
 {
     float const spacing = 10.0;
@@ -1099,4 +1121,103 @@ FrameContext* WaitForNextFrameResources()
     WaitForMultipleObjects(numWaitableObjects, waitableObjects, TRUE, INFINITE);
 
     return frameCtx;
+}
+
+/* ImPlot Graph Styles */
+void ImplotStyleSeabornLight()
+{
+    ImPlotStyle& style              = ImPlot::GetStyle();
+
+    ImVec4* colors                  = style.Colors;
+    colors[ImPlotCol_Line]          = IMPLOT_AUTO_COL;
+    colors[ImPlotCol_Fill]          = IMPLOT_AUTO_COL;
+    colors[ImPlotCol_MarkerOutline] = IMPLOT_AUTO_COL;
+    colors[ImPlotCol_MarkerFill]    = IMPLOT_AUTO_COL;
+    colors[ImPlotCol_ErrorBar]      = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
+    colors[ImPlotCol_FrameBg]       = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+    colors[ImPlotCol_PlotBg]        = ImVec4(0.95f, 0.95f, 0.95f, 1.00f);
+    colors[ImPlotCol_PlotBorder]    = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+    colors[ImPlotCol_LegendBg]      = ImVec4(0.92f, 0.92f, 0.95f, 1.00f);
+    colors[ImPlotCol_LegendBorder]  = ImVec4(0.80f, 0.81f, 0.85f, 1.00f);
+    colors[ImPlotCol_LegendText]    = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
+    colors[ImPlotCol_TitleText]     = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
+    colors[ImPlotCol_InlayText]     = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
+    colors[ImPlotCol_AxisText]      = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
+    colors[ImPlotCol_AxisGrid]      = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+    colors[ImPlotCol_AxisBgHovered] = ImVec4(0.92f, 0.92f, 0.95f, 1.00f);
+    colors[ImPlotCol_AxisBgActive]  = ImVec4(0.92f, 0.92f, 0.95f, 0.75f);
+    colors[ImPlotCol_Selection]     = ImVec4(1.00f, 0.65f, 0.00f, 1.00f);
+    colors[ImPlotCol_Crosshairs]    = ImVec4(0.23f, 0.10f, 0.64f, 0.50f);
+
+    style.LineWeight       = 1.5;
+    style.Marker           = ImPlotMarker_Circle;
+    style.MarkerSize       = 4;
+    style.MarkerWeight     = 1;
+    style.FillAlpha        = 1.0f;
+    style.ErrorBarSize     = 5;
+    style.ErrorBarWeight   = 1.5f;
+    style.DigitalBitHeight = 8;
+    style.DigitalBitGap    = 4;
+    style.PlotBorderSize   = 0;
+    style.MinorAlpha       = 1.0f;
+    style.MajorTickLen     = ImVec2(0,0);
+    style.MinorTickLen     = ImVec2(0,0);
+    style.MajorTickSize    = ImVec2(0,0);
+    style.MinorTickSize    = ImVec2(0,0);
+    style.MajorGridSize    = ImVec2(1.2f,1.2f);
+    style.MinorGridSize    = ImVec2(1.2f,1.2f);
+    style.PlotPadding      = ImVec2(12,12);
+    style.LabelPadding     = ImVec2(5,5);
+    style.LegendPadding    = ImVec2(5,5);
+    style.MousePosPadding  = ImVec2(5,5);
+    style.PlotMinSize      = ImVec2(300,225);
+}
+
+void ImplotStyleSeabornDark()
+{
+    ImPlotStyle& style = ImPlot::GetStyle();
+
+    ImVec4* colors = style.Colors;
+    colors[ImPlotCol_Line]          = IMPLOT_AUTO_COL;
+    colors[ImPlotCol_Fill]          = IMPLOT_AUTO_COL;
+    colors[ImPlotCol_MarkerOutline] = IMPLOT_AUTO_COL;
+    colors[ImPlotCol_MarkerFill]    = IMPLOT_AUTO_COL;
+    colors[ImPlotCol_ErrorBar]      = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+    colors[ImPlotCol_FrameBg]       = ImVec4(0.10f, 0.10f, 0.10f, 1.00f);
+    colors[ImPlotCol_PlotBg]        = ImVec4(0.15f, 0.15f, 0.17f, 1.00f);
+    colors[ImPlotCol_PlotBorder]    = ImVec4(0.50f, 0.50f, 0.50f, 0.50f);
+    colors[ImPlotCol_LegendBg]      = ImVec4(0.15f, 0.15f, 0.15f, 1.00f);
+    colors[ImPlotCol_LegendBorder]  = ImVec4(0.50f, 0.50f, 0.50f, 1.00f);
+    colors[ImPlotCol_LegendText]    = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+    colors[ImPlotCol_TitleText]     = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+    colors[ImPlotCol_InlayText]     = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+    colors[ImPlotCol_AxisText]      = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+    colors[ImPlotCol_AxisGrid]      = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
+    colors[ImPlotCol_AxisBgHovered] = ImVec4(0.30f, 0.30f, 0.30f, 1.00f);
+    colors[ImPlotCol_AxisBgActive]  = ImVec4(0.30f, 0.30f, 0.30f, 0.75f);
+    colors[ImPlotCol_Selection]     = ImVec4(1.00f, 0.65f, 0.00f, 1.00f);
+    colors[ImPlotCol_Crosshairs]    = ImVec4(1.00f, 1.00f, 1.00f, 0.50f);
+
+    style.LineWeight       = 1.5;
+    style.Marker           = ImPlotMarker_Circle;
+    style.MarkerSize       = 4;
+    style.MarkerWeight     = 1;
+    style.FillAlpha        = 1.0f;
+    style.ErrorBarSize     = 5;
+    style.ErrorBarWeight   = 1.5f;
+    style.DigitalBitHeight = 8;
+    style.DigitalBitGap    = 4;
+    style.PlotBorderSize   = 0;
+    style.MinorAlpha       = 1.0f;
+    style.MajorTickLen     = ImVec2(0,0);
+    style.MinorTickLen     = ImVec2(0,0);
+    style.MajorTickSize    = ImVec2(0,0);
+    style.MinorTickSize    = ImVec2(0,0);
+    style.MajorGridSize    = ImVec2(1.2f,1.2f);
+    style.MinorGridSize    = ImVec2(1.2f,1.2f);
+    style.PlotPadding      = ImVec2(12,12);
+    style.LabelPadding     = ImVec2(5,5);
+    style.LegendPadding    = ImVec2(5,5);
+    style.MousePosPadding  = ImVec2(5,5);
+    style.PlotMinSize      = ImVec2(300,225);
 }
