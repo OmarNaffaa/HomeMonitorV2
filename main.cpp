@@ -130,30 +130,52 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 void Win32RegisterAndCreateWindow(HWND& hwnd, WNDCLASSEXW& windowClass);
 
 // HomeMonitor Global Definitions
-typedef struct
+struct HomeMonitorAssignedColor_t
 {
-    unsigned int colorRgba;
-    ImVec4 colorRgb;
+    unsigned int rgba;   // RGBA Color. E.g. (255, 255, 255, 0)
+    ImVec4 rgb;          // RGB Color. E.g. (1.0, 1.0, 1.0, 0.0)
+
+    bool operator==(const HomeMonitorAssignedColor_t& color) const
+    {
+        bool sameRgba = (rgba == color.rgba);
+        bool sameRgb = ((rgb.x == color.rgb.x) && (rgb.y == color.rgb.y)
+                        && (rgb.z == color.rgb.z) && (rgb.w == color.rgb.w));
+
+        return (sameRgba && sameRgb);
+    }
+};
+
+struct HomeMonitorColorOption_t
+{
+    HomeMonitorAssignedColor_t color;
     bool available;
-} ColorOption_t;
+};
 
-typedef struct
-{
-    unsigned int assignedColorRgba;   // RGBA Color. E.g. (255, 255, 255, 0)
-    ImVec4 assignedColorRgb;          // RGB Color. E.g. (1.0, 1.0, 1.0, 0.0)
-} HomeMonitorAssignedColor_t;
-
-typedef struct
+struct HomeMonitor_t
 {
     ThingSpeak thingSpeak;
     HomeMonitorAssignedColor_t assignedColor;
 
     // Display properties
     bool displayData;
-} HomeMonitor_t;
+};
 
 // HomeMonitor Global Declarations
 bool darkMode = false;
+
+static std::vector<HomeMonitorColorOption_t> colorOptions =
+{
+    // Blue
+    {{IM_COL32(  0, 114, 189, 255), ImVec4(0.0f,   0.447f, 0.741f, 1.0f)}, true},
+    // Orange
+    {{IM_COL32(217, 120,   0, 255), ImVec4(0.851f, 0.471f, 0.0f,   1.0f)}, true},
+    // Green
+    {{IM_COL32(119, 172,  48, 255), ImVec4(0.467f, 0.675f, 0.188f, 1.0f)}, true},
+    // Purple
+    {{IM_COL32(126,  47, 142, 255), ImVec4(0.494f, 0.184f, 0.557f, 1.0f)}, true},
+    // Yellow
+    {{IM_COL32(237, 177,  32, 255), ImVec4(0.929f, 0.694f, 0.125f, 1.0f)}, true},
+};
 
 std::string basePath = "D:\\06_PersonalProjects\\HomeMonitorV2";
 std::string fontFilePath = basePath + "\\Fonts\\Roboto-Regular.ttf";
@@ -173,6 +195,7 @@ void HomeMonitorGraphStyleLight();
 void HomeMonitorGraphStyleDark();
 
 bool HomeMonitorSetColor(HomeMonitor_t& homeMonitor);
+void HomeMonitorReleaseColor(HomeMonitorAssignedColor_t& color);
 void HomeMonitorDrawVerticalCursor();
 void HomeMonitorDrawHorizontalLine();
 
@@ -488,7 +511,7 @@ void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMon
         ImVec4 color;
         if (homeMonitor.displayData)
         {
-            color = homeMonitor.assignedColor.assignedColorRgb;
+            color = homeMonitor.assignedColor.rgb;
         }
         else
         {
@@ -569,11 +592,14 @@ void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMon
         {
             // Only populate entry input text boxes on initial/new selections.
             // Otherwise user input is overwritten
-            strncpy(nameInputBuffer, homeMonitors[selected].thingSpeak.GetName().c_str(),
+            strncpy(nameInputBuffer,
+                    homeMonitors[selected].thingSpeak.GetName().c_str(),
                     MAX_HOMEMONITOR_USER_INPUT_SIZE);
-            strncpy(channelInputBuffer, homeMonitors[selected].thingSpeak.GetChannel().c_str(),
+            strncpy(channelInputBuffer,
+                    homeMonitors[selected].thingSpeak.GetChannel().c_str(),
                     MAX_HOMEMONITOR_USER_INPUT_SIZE);
-            strncpy(keyInputBuffer, homeMonitors[selected].thingSpeak.GetKey().c_str(),
+            strncpy(keyInputBuffer,
+                    homeMonitors[selected].thingSpeak.GetKey().c_str(),
                     MAX_HOMEMONITOR_USER_INPUT_SIZE);
 
             lastSelection = selected;
@@ -607,6 +633,8 @@ void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMon
 
         if (ImGui::Button("Remove", ImVec2(75, 0)))
         {
+            HomeMonitorReleaseColor(homeMonitors[selected].assignedColor);
+
             homeMonitors.erase(homeMonitors.begin() + selected);
 
             json newFileContent;
@@ -647,6 +675,7 @@ void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMon
  */
 void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& homeMonitors)
 {
+    static bool errorOccurred = false;
     ImGui::Begin("Add ThingSpeak Object");
 
     static char nameInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE];
@@ -688,45 +717,59 @@ void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& home
 
             homeMonitor.thingSpeak = { nameInputBuffer,
                                        channelInputBuffer,
-                                       keyInputBuffer   };
+                                       keyInputBuffer      };
 
-            if (!HomeMonitorSetColor(homeMonitor))
+            if (HomeMonitorSetColor(homeMonitor))
             {
-                std::cerr << "ERROR!!" << std::endl;
-                assert(!"TODO: Prevent addition and add pop-up to notify user");
+                homeMonitor.displayData = false;
+                homeMonitor.thingSpeak.GetFieldData();
+                homeMonitor.displayData = true;
+
+                homeMonitors.push_back(homeMonitor);
+
+                // Store in file for future use
+                std::ifstream inputFile(thingSpeakFilePath);
+                if (!inputFile.is_open())
+                {
+                    std::cerr << "Could not open " << thingSpeakFilePath << std::endl;
+                    assert(!"Could not open ThingSpeak object JSON file");
+                }
+
+                json thingSpeakObjectsJson;
+                inputFile >> thingSpeakObjectsJson;
+
+                inputFile.close();
+
+                thingSpeakObjectsJson.push_back({
+                    {"name", nameInputBuffer},
+                    {"channel", channelInputBuffer},
+                    {"key", keyInputBuffer}
+                });
+
+                std::ofstream outputFile(thingSpeakFilePath);
+                outputFile << thingSpeakObjectsJson.dump(4);
+                outputFile.close();
+
+                memset(nameInputBuffer, 0, sizeof(nameInputBuffer));
+                memset(channelInputBuffer, 0, sizeof(channelInputBuffer));
+                memset(keyInputBuffer, 0, sizeof(keyInputBuffer));
             }
-
-            homeMonitors.push_back(homeMonitor);
-
-            homeMonitor.thingSpeak.GetFieldData();
-
-            // Store in file for future use
-            std::ifstream inputFile(thingSpeakFilePath);
-            if (!inputFile.is_open())
+            else
             {
-                std::cerr << "Could not open " << thingSpeakFilePath << std::endl;
-                assert(!"Could not open ThingSpeak object JSON file");
+                 ImGui::OpenPopup("Error");
             }
-
-            json thingSpeakObjectsJson;
-            inputFile >> thingSpeakObjectsJson;
-
-            inputFile.close();
-
-            thingSpeakObjectsJson.push_back({
-                {"name", nameInputBuffer},
-                {"channel", channelInputBuffer},
-                {"key", keyInputBuffer}
-            });
-
-            std::ofstream outputFile(thingSpeakFilePath);
-            outputFile << thingSpeakObjectsJson.dump(4);
-            outputFile.close();
-
-            memset(nameInputBuffer, 0, sizeof(nameInputBuffer));
-            memset(channelInputBuffer, 0, sizeof(channelInputBuffer));
-            memset(keyInputBuffer, 0, sizeof(keyInputBuffer));
         }
+    }
+
+    if (ImGui::BeginPopup("Error", ImGuiWindowFlags_Modal))
+    {
+        ImGui::Text("Maximum number of objects added");
+        ImGui::Spacing();
+        if (ImGui::Button("Close"))
+        {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
     }
 
     ImGui::End();   // General Controls
@@ -795,7 +838,7 @@ void HomeMonitorCreateThingSpeakViewerWindow(std::string name,
                 dataset = homeMonitor.thingSpeak.GetHumidity();
             }
 
-            ImPlot::PushStyleColor(0, homeMonitor.assignedColor.assignedColorRgb);
+            ImPlot::PushStyleColor(0, homeMonitor.assignedColor.rgb);
             ImPlot::PlotLine(homeMonitor.thingSpeak.GetName().c_str(),
                              dataset->xAxisData, dataset->yAxisData,
                              dataset->numDataPoints,ImPlotLegendFlags_NoButtons);
@@ -855,20 +898,6 @@ void HomeMonitorCreateThingSpeakViewerWindow(std::string name,
  */
 bool HomeMonitorSetColor(HomeMonitor_t& homeMonitor)
 {
-    static std::vector<ColorOption_t> colorOptions =
-    {
-        // Blue
-        {IM_COL32(  0, 114, 189, 255), ImVec4(0.0f,   0.447f, 0.741f, 1.0f), true},
-        // Orange
-        {IM_COL32(217, 120,   0, 255), ImVec4(0.851f, 0.471f, 0.0f,   1.0f), true},
-        // Green
-        {IM_COL32(119, 172,  48, 255), ImVec4(0.467f, 0.675f, 0.188f, 1.0f), true},
-        // Purple
-        {IM_COL32(126,  47, 142, 255), ImVec4(0.494f, 0.184f, 0.557f, 1.0f), true},
-        // Yellow
-        {IM_COL32(237, 177,  32, 255), ImVec4(0.929f, 0.694f, 0.125f, 1.0f), true},
-    };
-
     bool colorSelected = false;
 
     for (auto& option : colorOptions)
@@ -877,11 +906,11 @@ bool HomeMonitorSetColor(HomeMonitor_t& homeMonitor)
         {
             #if (DEBUG_HOMEMONITOR)
             std::cout << "Assigning color: " << std::endl;
-            std::cout << option.colorRgb.w << ", " << option.colorRgb.x << ", "
-                      << option.colorRgb.y << ", " << option.colorRgb.z << ", " << std::endl;
+            std::cout << option.color.rgb.w << ", " << option.color.rgb.x << ", "
+                      << option.color.rgb.y << ", " << option.color.rgb.z << ", " << std::endl;
             #endif
-            homeMonitor.assignedColor.assignedColorRgba = option.colorRgba;
-            homeMonitor.assignedColor.assignedColorRgb = option.colorRgb;
+            homeMonitor.assignedColor.rgba = option.color.rgba;
+            homeMonitor.assignedColor.rgb = option.color.rgb;
 
             colorSelected = true;
             option.available = false;
@@ -891,6 +920,30 @@ bool HomeMonitorSetColor(HomeMonitor_t& homeMonitor)
     }
 
     return colorSelected;
+}
+
+/**
+ * @brief Mark a used color as free on object removal
+ * 
+ * @param color - Color currently being used by HomeMonitor object
+ */
+void HomeMonitorReleaseColor(HomeMonitorAssignedColor_t& color)
+{
+    for (auto& option : colorOptions)
+    {
+        if (option.color == color)
+        {
+            #if (DEBUG_HOMEMONITOR)
+            std::cout << "Releasing color: " << std::endl;
+            std::cout << option.color.rgb.w << ", " << option.color.rgb.x << ", "
+                      << option.color.rgb.y << ", " << option.color.rgb.z << ", " << std::endl;
+            #endif
+
+            option.available = true;
+
+            break;
+        }
+    }
 }
 
 /**
