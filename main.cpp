@@ -373,7 +373,9 @@ int main(int argc, char** argv)
 
             for (auto& homeMonitor : homeMonitors)
             {
+                homeMonitor.displayData = false;
                 result = homeMonitor.thingSpeak.GetFieldData();
+                homeMonitor.displayData = true;
             }
 
             pollingDelay = std::chrono::steady_clock::now() + std::chrono::minutes(5);
@@ -497,7 +499,9 @@ void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMon
     {
         for (auto& homeMonitor : homeMonitors)
         {
+            homeMonitor.displayData = false;
             result = homeMonitor.thingSpeak.GetFieldData();
+            homeMonitor.displayData = true;
         }
     }
 
@@ -702,15 +706,43 @@ void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& home
                              keyInputBuffer, IM_ARRAYSIZE(keyInputBuffer));
 
     ImGui::SameLine();
+
+    static std::string messageIfError = "";
+
     if (ImGui::Button("Add", ImVec2(100, 0)))
     {
+        bool valid = true;
+
         #if (DEBUG_HOMEMONITOR)
         std::cout << "Name = " << nameInputBuffer << ", "
                   << "Channel = " << channelInputBuffer << ", "
                   << "Key = " << keyInputBuffer << std::endl;
         #endif
 
-        if (nameInputBuffer[0] && channelInputBuffer[0] && keyInputBuffer[0])
+        valid = (nameInputBuffer[0] && channelInputBuffer[0] && keyInputBuffer[0]);
+
+        if (!valid)
+        {
+            messageIfError = "Missing information needed to add object";
+        }
+
+        if (valid)
+        {
+            std::string chosenName(nameInputBuffer);
+
+            for (auto& homeMonitor : homeMonitors)
+            {
+                if (chosenName == homeMonitor.thingSpeak.GetName())
+                {
+                    messageIfError = (chosenName + " already exists");
+                    
+                    valid = false;
+                    break;
+                }
+            }
+        }
+
+        if (valid)
         {
             // Add to running instance of HomeMonitor
             HomeMonitor_t homeMonitor;
@@ -719,7 +751,8 @@ void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& home
                                        channelInputBuffer,
                                        keyInputBuffer      };
 
-            if (HomeMonitorSetColor(homeMonitor))
+            valid = HomeMonitorSetColor(homeMonitor);
+            if (valid)
             {
                 homeMonitor.displayData = false;
                 homeMonitor.thingSpeak.GetFieldData();
@@ -756,14 +789,23 @@ void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& home
             }
             else
             {
-                 ImGui::OpenPopup("Error");
+                messageIfError = "Maximum number of objects added";
             }
+        }
+
+        if (!valid)
+        {
+            #if (DEBUG_HOMEMONITOR)
+            std::cout << messageIfError << std::endl;
+            #endif
+
+            ImGui::OpenPopup("Error");
         }
     }
 
-    if (ImGui::BeginPopup("Error", ImGuiWindowFlags_Modal))
+    if (ImGui::BeginPopupModal("Error", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
     {
-        ImGui::Text("Maximum number of objects added");
+        ImGui::Text(messageIfError.c_str());
         ImGui::Spacing();
         if (ImGui::Button("Close"))
         {
@@ -772,7 +814,7 @@ void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& home
         ImGui::EndPopup();
     }
 
-    ImGui::End();   // General Controls
+    ImGui::End();
 }
 
 /**
