@@ -1,7 +1,12 @@
 [
     {
         "channel": "1277292",
-        "key": "I4BV5Q70NNDWH0SP",
+        "key": "9D4W4ZYZEVWUZ7CP",
         "name": "Bedroom"
+    },
+    {
+        "channel": "2800852",
+        "key": "TTLLULBHWFYUO1E6",
+        "name": "Second Device"
     }
 ]

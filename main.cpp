@@ -23,7 +23,7 @@
 
 #include "ThingSpeak/ThingSpeak.h"
 
-#define DEBUG_HOMEMONITOR       true
+#define DEBUG_HOMEMONITOR       false
 #define HOMEMONITOR_USE_VSYNC   false
 
 #define MAX_HOMEMONITOR_USER_INPUT_SIZE   30
@@ -373,9 +373,12 @@ int main(int argc, char** argv)
 
             for (auto& homeMonitor : homeMonitors)
             {
-                homeMonitor.displayData = false;
-                result = homeMonitor.thingSpeak.GetFieldData();
-                homeMonitor.displayData = true;
+                if (homeMonitor.displayData)
+                {
+                    homeMonitor.displayData = false;
+                    result = homeMonitor.thingSpeak.GetFieldData();
+                    homeMonitor.displayData = true;
+                }
             }
 
             pollingDelay = std::chrono::steady_clock::now() + std::chrono::minutes(5);
@@ -499,9 +502,12 @@ void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMon
     {
         for (auto& homeMonitor : homeMonitors)
         {
-            homeMonitor.displayData = false;
-            result = homeMonitor.thingSpeak.GetFieldData();
-            homeMonitor.displayData = true;
+            if (homeMonitor.displayData)
+            {
+                homeMonitor.displayData = false;
+                result = homeMonitor.thingSpeak.GetFieldData();
+                homeMonitor.displayData = true;
+            }
         }
     }
 
@@ -587,9 +593,9 @@ void HomeMonitorCreateViewerPropertiesWindow(std::vector<HomeMonitor_t>& homeMon
                                 channelInputBuffer, IM_ARRAYSIZE(channelInputBuffer));
 
         static char keyInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE];
-        ImGui::Text("Key", ImVec2(160, 0));
+        ImGui::Text("Read Key", ImVec2(160, 0));
         ImGui::SetNextItemWidth(160.0f);
-        ImGui::InputTextWithHint("##keyInput", "e.g. \"I4BV5Q70NNDWH0SP\"",
+        ImGui::InputTextWithHint("##keyInput", "e.g. \"9D4W4ZYZEVWUZ7CP\"",
                                 keyInputBuffer, IM_ARRAYSIZE(keyInputBuffer));
 
         if (selected != lastSelection)
@@ -699,10 +705,10 @@ void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& home
 
     static char keyInputBuffer[MAX_HOMEMONITOR_USER_INPUT_SIZE];
     ImGui::SameLine();
-    ImGui::Text("Key", ImVec2(150, 0));
+    ImGui::Text("Read Key", ImVec2(150, 0));
     ImGui::SameLine();
     ImGui::SetNextItemWidth(200.0f);
-    ImGui::InputTextWithHint("##keyInput", "e.g. \"I4BV5Q70NNDWH0SP\"",
+    ImGui::InputTextWithHint("##keyInput", "e.g. \"9D4W4ZYZEVWUZ7CP\"",
                              keyInputBuffer, IM_ARRAYSIZE(keyInputBuffer));
 
     ImGui::SameLine();
@@ -754,9 +760,12 @@ void HomeMonitorCreateAddThingSpeakObjectWindow(std::vector<HomeMonitor_t>& home
             valid = HomeMonitorSetColor(homeMonitor);
             if (valid)
             {
-                homeMonitor.displayData = false;
-                homeMonitor.thingSpeak.GetFieldData();
-                homeMonitor.displayData = true;
+                if (homeMonitor.displayData)
+                {
+                    homeMonitor.displayData = false;
+                    homeMonitor.thingSpeak.GetFieldData();
+                    homeMonitor.displayData = true;
+                }
 
                 homeMonitors.push_back(homeMonitor);
 
